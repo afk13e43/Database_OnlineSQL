@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 機密：絕不 commit 連線資訊
+.env
+*.env
+secrets.*
