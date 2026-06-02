@@ -24,6 +24,28 @@ const ma = {
 const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', lastValueVisible: false, priceLineVisible: false });
 vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
+// 布林通道 (20, 2σ) 上下軌：預設隱藏、勾選才顯示（中軌＝MA20，沿用 MA20 開關）
+const BB_COLOR = '#607d8b';
+const bbOpt = { color: BB_COLOR, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+                priceLineVisible: false, lastValueVisible: false, visible: false };
+const bbUpper = chart.addLineSeries(bbOpt);
+const bbLower = chart.addLineSeries(bbOpt);
+
+function bollinger(rows, period, mult) {
+  const up = [], lo = [];
+  for (let i = period - 1; i < rows.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += rows[j].close;
+    const mean = sum / period;
+    let v = 0;
+    for (let j = i - period + 1; j <= i; j++) v += (rows[j].close - mean) ** 2;
+    const sd = Math.sqrt(v / period);              // 母體標準差（經典布林定義）
+    up.push({ time: rows[i].time, value: +(mean + mult * sd).toFixed(2) });
+    lo.push({ time: rows[i].time, value: +(mean - mult * sd).toFixed(2) });
+  }
+  return { up, lo };
+}
+
 // 雙擊圖表 → 縮放回「顯示全部資料」
 chartEl.addEventListener('dblclick', () => chart.timeScale().fitContent());
 
@@ -37,6 +59,9 @@ async function loadStock(code, name) {
   candle.setData(rows.map(r => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close })));
   for (const k of ['ma5', 'ma20', 'ma60'])
     ma[k].setData(rows.filter(r => r[k] != null).map(r => ({ time: r.time, value: r[k] })));
+  const bb = bollinger(rows, 20, 2);
+  bbUpper.setData(bb.up);
+  bbLower.setData(bb.lo);
   vol.setData(rows.map(r => ({
     time: r.time, value: r.volume || 0,
     color: (r.close >= r.open) ? 'rgba(213,0,0,.35)' : 'rgba(0,137,123,.35)',
@@ -51,8 +76,13 @@ async function loadStock(code, name) {
   statEl.innerHTML = `${name} <b>${last.close}</b> <span class="${cls}">${sign}${Math.abs(chg).toFixed(2)}%</span> <small>(${last.time})</small>`;
 }
 
-document.querySelectorAll('.ma-toggles input').forEach(cb => {
+document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
   cb.addEventListener('change', () => ma[cb.dataset.ma].applyOptions({ visible: cb.checked }));
+});
+const bbCb = document.getElementById('bb-toggle');
+bbCb.addEventListener('change', () => {
+  bbUpper.applyOptions({ visible: bbCb.checked });
+  bbLower.applyOptions({ visible: bbCb.checked });
 });
 
 (async function init() {
