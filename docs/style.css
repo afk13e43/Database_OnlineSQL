@@ -52,6 +52,18 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .years button:hover { border-color: #1976d2; color: #1976d2; }
 .years button.active { background: #1976d2; color: #fff; border-color: #1976d2; }
 
+.rebal { margin-top: 14px; border: 1px solid #e3e3e3; border-radius: 6px; padding: 12px 14px; background: #fff; font-size: 13px; }
+.rebal .rb-hd { font-weight: 600; margin-bottom: 2px; }
+.rebal .rb-sub { color: #888; font-size: 12px; margin-bottom: 10px; }
+.rebal .rb-grid { display: flex; flex-wrap: wrap; gap: 14px 30px; }
+.rebal .rb-grid > div { display: flex; flex-direction: column; }
+.rebal .rb-lbl { color: #999; font-size: 12px; }
+.rebal .rb-grid b { font-size: 18px; }
+.rebal .up { color: #d50000; } .rebal .down { color: #00897b; }
+.rebal .rb-cost { margin-top: 10px; color: #666; font-size: 12px; border-top: 1px dashed #eee; padding-top: 8px; }
+.rebal .rb-cost b { color: #444; }
+.rebal .rb-note { color: #999; }
+
 .hint { color: #aaa; font-size: 12px; margin-top: 8px; }
 
 footer { max-width: 1000px; margin: 24px auto; padding: 12px 16px; color: #999; font-size: 12px; border-top: 1px solid #eee; }

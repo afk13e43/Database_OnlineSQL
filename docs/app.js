@@ -124,6 +124,70 @@ function buildYears() {
   yearsBuilt = true;
 }
 
+// ── 50/50（當前股票 : 現金）再平衡模擬：用「目前可視範圍」當回測區間 ──
+const FEE_RATE = 0.001425;   // 交易手續費（買賣各收）
+const TAX_RATE = 0.003;      // 證交稅（僅賣出收）
+const INIT_CASH = 10000000;  // 初始金額 1000 萬
+const RB_TARGET = 0.5;       // 股票目標權重 50%
+const RB_DRIFT = 0.10;       // 偏離 ±10% 觸發再平衡
+const rebalEl = document.getElementById('rebal');
+
+function money(x) { return Math.round(x).toLocaleString('en-US'); }
+
+function simulateRebalance(slice) {
+  if (!slice || slice.length < 2) return null;
+  let cash = INIT_CASH, shares = 0, fee = 0, tax = 0;
+  const rebal = (price) => {
+    const eq = cash + shares * price;
+    const delta = RB_TARGET * eq - shares * price;   // 目標股票市值 − 目前股票市值
+    if (delta > 0) {                                 // 買進（收手續費）
+      const f = delta * FEE_RATE;
+      shares += delta / price; cash -= delta + f; fee += f;
+    } else if (delta < 0) {                          // 賣出（收手續費 + 證交稅）
+      const v = -delta, f = v * FEE_RATE, t = v * TAX_RATE;
+      shares -= v / price; cash += v - f - t; fee += f; tax += t;
+    }
+  };
+  rebal(slice[0].close);                             // 首日建立 50/50
+  let peak = -Infinity, maxDD = 0;
+  for (const r of slice) {
+    const p = r.close, eq = cash + shares * p;
+    if (Math.abs(shares * p / eq - RB_TARGET) >= RB_DRIFT) rebal(p);   // 摸到 ±10% 就再平衡
+    const eq2 = cash + shares * p;
+    if (eq2 > peak) peak = eq2;
+    if ((eq2 - peak) / peak < maxDD) maxDD = (eq2 - peak) / peak;
+  }
+  const fin = cash + shares * slice[slice.length - 1].close;
+  return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
+           fin, ret: (fin - INIT_CASH) / INIT_CASH * 100, maxDD: maxDD * 100,
+           fee, tax, cost: fee + tax };
+}
+
+function updateRebal() {
+  if (!rebalEl || !rows.length) return;
+  const vr = chart.timeScale().getVisibleLogicalRange();
+  if (!vr) return;
+  const from = Math.max(0, Math.ceil(vr.from)), to = Math.min(rows.length - 1, Math.floor(vr.to));
+  const r = simulateRebalance(rows.slice(from, to + 1));
+  if (!r) {
+    rebalEl.innerHTML = '<div class="rb-hd">50/50 再平衡</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
+    return;
+  }
+  const rc = r.ret >= 0 ? 'up' : 'down';
+  rebalEl.innerHTML =
+    `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±10% 自動再平衡</div>` +
+    `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}</div>` +
+    `<div class="rb-grid">` +
+      `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
+      `<div><span class="rb-lbl">報酬率</span><b class="${rc}">${r.ret >= 0 ? '+' : ''}${r.ret.toFixed(2)}%</b></div>` +
+      `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
+      `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
+    `</div>` +
+    `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>`;
+}
+
+chart.timeScale().subscribeVisibleLogicalRangeChange(updateRebal);
+
 async function loadStock(code, name) {
   const data = await (await fetch(`data/${code}.json?v=${Date.now()}`)).json();
   rows = data.rows;
@@ -152,6 +216,7 @@ async function loadStock(code, name) {
   updateLegend(rows.length - 1);   // 預設先顯示最新一天，滑鼠移到某天再更新
   buildYears();                    // 建立年份快捷列（只建一次）
   setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
+  updateRebal();                   // 依目前可視範圍重算 50/50 再平衡
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
