@@ -52,7 +52,9 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .years button:hover { border-color: #1976d2; color: #1976d2; }
 .years button.active { background: #1976d2; color: #fff; border-color: #1976d2; }
 
-.rebal { margin-top: 14px; border: 1px solid #e3e3e3; border-radius: 6px; padding: 12px 14px; background: #fff; font-size: 13px; }
+.rebal { margin-top: 14px; border: 1px solid #e3e3e3; border-radius: 6px; padding: 12px 14px; background: #fff; font-size: 13px;
+  display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.rebal .rb-main { flex: 1 1 340px; min-width: 0; }
 .rebal .rb-hd { font-weight: 600; margin-bottom: 2px; }
 .rebal .rb-sub { color: #888; font-size: 12px; margin-bottom: 10px; }
 .rebal .rb-grid { display: flex; flex-wrap: wrap; gap: 14px 30px; }
@@ -63,6 +65,13 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .rebal .rb-cost { margin-top: 10px; color: #666; font-size: 12px; border-top: 1px dashed #eee; padding-top: 8px; }
 .rebal .rb-cost b { color: #444; }
 .rebal .rb-note { color: #999; }
+.rebal .rb-pie { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rebal .pie { width: 120px; height: 120px; border-radius: 50%; box-shadow: 0 0 0 1px #eee inset; }
+.rebal .pie-legend { font-size: 12px; line-height: 1.7; }
+.rebal .pie-legend > div { display: flex; align-items: center; gap: 6px; }
+.rebal .pie-legend .dot { width: 10px; height: 10px; border-radius: 2px; }
+.rebal .dot.stock { background: #1976d2; } .rebal .dot.cash { background: #b0bec5; }
+.rebal .pie-cap { font-size: 11px; color: #999; }
 
 .hint { color: #aaa; font-size: 12px; margin-top: 8px; }
 

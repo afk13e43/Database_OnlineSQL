@@ -160,9 +160,10 @@ function simulateRebalance(slice) {
     if (eq2 > peak) peak = eq2;
     if ((eq2 - peak) / peak < maxDD) maxDD = (eq2 - peak) / peak;
   }
-  const fin = cash + shares * slice[slice.length - 1].close;
+  const lastClose = slice[slice.length - 1].close;
+  const finStock = shares * lastClose, finCash = cash, fin = finStock + finCash;
   return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
-           fin, ret: (fin - INIT_CASH) / INIT_CASH * 100, maxDD: maxDD * 100,
+           fin, finStock, finCash, ret: (fin - INIT_CASH) / INIT_CASH * 100, maxDD: maxDD * 100,
            fee, tax, cost: fee + tax, trades };
 }
 
@@ -186,16 +187,27 @@ function updateRebal() {
     text: t.type === 'buy' ? '買' : '賣',
   })));
   const rc = r.ret >= 0 ? 'up' : 'down';
+  const stockPct = r.fin > 0 ? r.finStock / r.fin * 100 : 0, cashPct = 100 - stockPct;
   rebalEl.innerHTML =
-    `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±10% 自動再平衡</div>` +
-    `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
-    `<div class="rb-grid">` +
-      `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
-      `<div><span class="rb-lbl">報酬率</span><b class="${rc}">${r.ret >= 0 ? '+' : ''}${r.ret.toFixed(2)}%</b></div>` +
-      `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
-      `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
+    `<div class="rb-main">` +
+      `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±10% 自動再平衡</div>` +
+      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+      `<div class="rb-grid">` +
+        `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
+        `<div><span class="rb-lbl">報酬率</span><b class="${rc}">${r.ret >= 0 ? '+' : ''}${r.ret.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
+      `</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
     `</div>` +
-    `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>`;
+    `<div class="rb-pie">` +
+      `<div class="pie" style="background:conic-gradient(#1976d2 0 ${stockPct}%, #b0bec5 ${stockPct}% 100%)"></div>` +
+      `<div class="pie-legend">` +
+        `<div><span class="dot stock"></span>股票 ${stockPct.toFixed(1)}%　${money(r.finStock)}</div>` +
+        `<div><span class="dot cash"></span>現金 ${cashPct.toFixed(1)}%　${money(r.finCash)}</div>` +
+      `</div>` +
+      `<div class="pie-cap">期末 股票:現金 比例</div>` +
+    `</div>`;
 }
 
 chart.timeScale().subscribeVisibleLogicalRangeChange(updateRebal);
