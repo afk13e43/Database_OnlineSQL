@@ -5,8 +5,8 @@ build_site.py — 從 Azure SQL 讀股價，產生 GitHub Pages 用的靜態 JSO
 - 產生 docs/data/<code>.json 與 docs/data/index.json（清單 + 最後更新）
 - 連線走環境變數 DB_SERVER/DB_DATABASE/DB_USER/DB_PASSWORD（與 fetch_daily 相同；唯讀帳號即可）
 
-用法：python build_site.py            # 預設最近 500 個交易日
-      DAYS=750 python build_site.py
+用法：python build_site.py            # 預設匯出全部歷史（2015 起）
+      DAYS=500 python build_site.py   # 只取最近 500 個交易日
 """
 
 import os
@@ -21,7 +21,7 @@ if _missing:
 
 DB = dict(server=os.environ['DB_SERVER'], user=os.environ['DB_USER'],
           password=os.environ['DB_PASSWORD'], database=os.environ['DB_DATABASE'])
-DAYS = int(os.environ.get('DAYS', '500'))
+DAYS = int(os.environ.get('DAYS', '0'))      # 0 = 全部歷史；>0 則只取最近 N 個交易日
 
 NAMES = {'0050': '元大台灣50', '2303': '聯電', '2317': '鴻海', '2330': '台積電',
          '2382': '廣達', '2412': '中華電', '2454': '聯發科', '2881': '富邦金', 'TWII': '加權指數'}
@@ -43,8 +43,9 @@ def main():
 
     index = {'updated_utc': datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'), 'stocks': []}
     for code in codes:
+        top = f"TOP ({DAYS}) " if DAYS > 0 else ""
         cur.execute(
-            f"SELECT TOP ({DAYS}) [date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60 "
+            f"SELECT {top}[date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60 "
             "FROM dbo.StockTrading_Live WHERE StockCode=%s ORDER BY [date] DESC", (code,))
         recs = cur.fetchall()[::-1]                       # 由舊到新
         if not recs:
