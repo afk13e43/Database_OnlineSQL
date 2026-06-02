@@ -43,6 +43,14 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
   cursor: nwse-resize; z-index: 5; border-bottom-right-radius: 6px;
   background: repeating-linear-gradient(135deg, #b0b0b0 0 2px, transparent 2px 4px);
 }
+.years { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.years button {
+  font-size: 12px; padding: 3px 10px; cursor: pointer;
+  border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #555;
+}
+.years button:hover { border-color: #1976d2; color: #1976d2; }
+.years button.active { background: #1976d2; color: #fff; border-color: #1976d2; }
+
 .hint { color: #aaa; font-size: 12px; margin-top: 8px; }
 
 footer { max-width: 1000px; margin: 24px auto; padding: 12px 16px; color: #999; font-size: 12px; border-top: 1px solid #eee; }

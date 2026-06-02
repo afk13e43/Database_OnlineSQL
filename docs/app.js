@@ -52,8 +52,9 @@ chartEl.addEventListener('dblclick', () => chart.timeScale().fitContent());
 const sel = document.getElementById('stock');
 const statEl = document.getElementById('stat');
 const legendEl = document.getElementById('legend');
+const yearsEl = document.getElementById('years');
 
-let rows = [], rowMap = new Map(), curName = '';
+let rows = [], rowMap = new Map(), curName = '', yearsBuilt = false;
 
 // 把 crosshair 回傳的時間統一成 'YYYY-MM-DD' 字串，用來查當天那一列
 function timeKey(t) {
@@ -88,6 +89,39 @@ chart.subscribeCrosshairMove(param => {
   updateLegend(i == null ? rows.length - 1 : i);
 });
 
+// 年份快捷列：點某年 → 聚焦該年（左右＝該年第一筆~最後一筆交易日）
+function setActiveYearBtn(btn) {
+  yearsEl.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+}
+
+function focusYear(y, btn) {
+  if (!rows.length) return;
+  let from = -1, to = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (+rows[i].time.slice(0, 4) === y) { if (from < 0) from = i; to = i; }
+  }
+  if (from < 0) return;                       // 該年無資料
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, from - 1), to: to + 1 });
+  setActiveYearBtn(btn);
+}
+
+function buildYears() {
+  if (yearsBuilt || !rows.length) return;
+  const minY = +rows[0].time.slice(0, 4), maxY = +rows[rows.length - 1].time.slice(0, 4);
+  yearsEl.innerHTML = '';
+  for (let y = minY; y <= maxY; y++) {
+    const b = document.createElement('button');
+    b.textContent = y;
+    b.addEventListener('click', () => focusYear(y, b));
+    yearsEl.appendChild(b);
+  }
+  const all = document.createElement('button');
+  all.textContent = '全部';
+  all.addEventListener('click', () => { chart.timeScale().fitContent(); setActiveYearBtn(all); });
+  yearsEl.appendChild(all);
+  yearsBuilt = true;
+}
+
 async function loadStock(code, name) {
   const data = await (await fetch(`data/${code}.json?v=${Date.now()}`)).json();
   rows = data.rows;
@@ -114,6 +148,8 @@ async function loadStock(code, name) {
   const cls = chg >= 0 ? 'up' : 'down', sign = chg >= 0 ? '▲' : '▼';
   statEl.innerHTML = `${name} <b>${last.close}</b> <span class="${cls}">${sign}${Math.abs(chg).toFixed(2)}%</span> <small>(${last.time})</small>`;
   updateLegend(rows.length - 1);   // 預設先顯示最新一天，滑鼠移到某天再更新
+  buildYears();                    // 建立年份快捷列（只建一次）
+  setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
