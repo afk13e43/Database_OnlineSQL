@@ -24,6 +24,9 @@ const ma = {
 const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', lastValueVisible: false, priceLineVisible: false });
 vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
+// 雙擊圖表 → 縮放回「顯示全部資料」
+chartEl.addEventListener('dblclick', () => chart.timeScale().fitContent());
+
 const sel = document.getElementById('stock');
 const statEl = document.getElementById('stat');
 
@@ -38,7 +41,9 @@ async function loadStock(code, name) {
     time: r.time, value: r.volume || 0,
     color: (r.close >= r.open) ? 'rgba(213,0,0,.35)' : 'rgba(0,137,123,.35)',
   })));
-  chart.timeScale().fitContent();
+  // 預設只顯示最近約 120 個交易日 → 畫面外仍有歷史，可往左拖曳捲動（雙擊圖表看全部）
+  const n = rows.length, N = 120;
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - N), to: n + 2 });
 
   const last = rows[rows.length - 1], prev = rows[rows.length - 2] || last;
   const chg = prev.close ? ((last.close - prev.close) / prev.close * 100) : 0;
