@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小組共用股票資料庫 — 股價趨勢</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header>
+  <h1>📈 小組共用股票資料庫</h1>
+  <p class="sub">資料每日由 GitHub Actions 從 Azure SQL 自動更新　·　<span id="updated">載入中…</span></p>
+</header>
+
+<main>
+  <div class="controls">
+    <label class="pick">股票
+      <select id="stock"></select>
+    </label>
+    <span id="stat" class="stat"></span>
+    <span class="ma-toggles">
+      <label class="ma5"><input type="checkbox" data-ma="ma5" checked> MA5</label>
+      <label class="ma20"><input type="checkbox" data-ma="ma20" checked> MA20</label>
+      <label class="ma60"><input type="checkbox" data-ma="ma60" checked> MA60</label>
+    </span>
+  </div>
+  <div id="chart"></div>
+  <p class="hint">紅漲綠跌（台股慣例）　·　可拖曳平移、滾輪縮放　·　下方長條為成交量</p>
+</main>
+
+<footer>
+  <p>資料來源：yfinance → Azure SQL <code>DatabasePJ.dbo.StockTrading_Live</code>。
+     本頁為純靜態頁面，<b>不含任何資料庫帳號密碼</b>。</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

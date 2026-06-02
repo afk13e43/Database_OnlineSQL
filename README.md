@@ -15,6 +15,17 @@
 
 ---
 
+## 📊 線上圖表（GitHub Pages）
+
+啟用後可在這個網址看到**每日更新**的股價趨勢圖（K 線 + MA5/20/60 + 成交量，紅漲綠跌）：
+
+**https://afk13e43.github.io/Database_OnlineSQL/**
+
+網頁是純靜態頁（在 `docs/`），資料是 GitHub Actions 每日從 Azure SQL 匯出的 JSON，
+**頁面本身不含任何帳號密碼**。本機預覽：`python -m http.server -d docs`。
+
+---
+
 ## 資料表：`dbo.StockTrading_Live`
 
 | 欄位 | 型別 | 說明 |
@@ -98,18 +109,22 @@ Azure Portal → SQL server → **網路 / 防火牆規則** → 新增一條允
 也可本機跑：`BACKFILL=true python fetch_daily.py`（需先設 4 個 `DB_*` 環境變數）。
 
 ### 4. 建唯讀帳號給組員（建議）
-別把管理員帳號給組員（避免誤刪表）。在 SSMS 連雲端後：
+別把管理員帳號給組員（避免誤刪表）。用 **contained user**（只屬於這個資料庫、最簡單）：
+SSMS 用管理員連雲端後，**確認查詢視窗的資料庫是 `DatabasePJ`**（不是 master），執行：
 
 ```sql
--- (1) 連到 master 資料庫執行：
-CREATE LOGIN groupreader WITH PASSWORD = '取一個強密碼';
-
--- (2) 連到 DatabasePJ 執行：
-CREATE USER groupreader FOR LOGIN groupreader;
-ALTER ROLE db_datareader ADD MEMBER groupreader;   -- 只能讀、不能改
+CREATE USER groupreader WITH PASSWORD = 'StrongP@ss_2026';   -- 自己改，需符合強密碼規則
+ALTER ROLE db_datareader ADD MEMBER groupreader;             -- 只能讀、不能改
 ```
 
-把 `groupreader` 的帳密私下給組員。
+把 `groupreader` 的帳密私下給組員。組員連線時**務必指定資料庫 `DatabasePJ`**
+（SSMS：連線→「選項」→「連線至資料庫」填 `DatabasePJ`；pymssql：`database='DatabasePJ'`）。
+
+### 5. 啟用 GitHub Pages
+repo → **Settings → Pages → Build and deployment → Source 選「Deploy from a branch」**，
+分支選 **`main`**、資料夾選 **`/docs`**，存檔。等一兩分鐘即可在
+`https://afk13e43.github.io/Database_OnlineSQL/` 看到圖表。
+（每日 Action 會自動重建 `docs/data` 並 commit，頁面隨之更新。）
 
 ---
 

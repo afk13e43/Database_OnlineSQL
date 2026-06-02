@@ -1,6 +1,6 @@
 name: Daily stock update
 
-# 每日抓台股日線寫進 Azure SQL（dbo.StockTrading_Live）
+# 每日抓台股日線寫進 Azure SQL，並重建 GitHub Pages 用的網頁資料（docs/data）
 on:
   workflow_dispatch:                 # 可在 Actions 頁手動觸發（測試 / 全量回填）
     inputs:
@@ -12,7 +12,7 @@ on:
     - cron: '0 12 * * 1-5'           # 每週一~五 12:00 UTC = 台灣 20:00（收盤後、資料已穩定）
 
 permissions:
-  contents: read
+  contents: write                    # 需寫回 docs/data（網頁資料）
 
 jobs:
   update:
@@ -39,3 +39,19 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           BACKFILL:    ${{ inputs.backfill }}     # 排程觸發時為空字串 → 每日增量模式
         run: python fetch_daily.py
+
+      - name: Build website data (docs/data)
+        env:
+          DB_SERVER:   ${{ secrets.DB_SERVER }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USER:     ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: python build_site.py
+
+      - name: Commit refreshed website data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          git diff --staged --quiet || git commit -m "chore: 更新網站股價資料 ($(date -u +%Y-%m-%d))"
+          git push

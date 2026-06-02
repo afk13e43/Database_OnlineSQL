@@ -1,0 +1,68 @@
+{
+"updated_utc": "2026-06-02 11:52 UTC",
+"stocks": [
+{
+"code": "0050",
+"name": "元大台灣50",
+"last_date": "2026-06-02",
+"last_close": 105.7,
+"change_pct": 0.19
+},
+{
+"code": "2303",
+"name": "聯電",
+"last_date": "2026-06-02",
+"last_close": 141.5,
+"change_pct": -3.08
+},
+{
+"code": "2317",
+"name": "鴻海",
+"last_date": "2026-06-02",
+"last_close": 301.5,
+"change_pct": 2.73
+},
+{
+"code": "2330",
+"name": "台積電",
+"last_date": "2026-06-02",
+"last_close": 2380.0,
+"change_pct": 1.06
+},
+{
+"code": "2382",
+"name": "廣達",
+"last_date": "2026-06-02",
+"last_close": 400.5,
+"change_pct": 7.52
+},
+{
+"code": "2412",
+"name": "中華電",
+"last_date": "2026-06-02",
+"last_close": 142.0,
+"change_pct": 1.07
+},
+{
+"code": "2454",
+"name": "聯發科",
+"last_date": "2026-06-02",
+"last_close": 4525.0,
+"change_pct": -0.66
+},
+{
+"code": "2881",
+"name": "富邦金",
+"last_date": "2026-06-02",
+"last_close": 113.5,
+"change_pct": 2.71
+},
+{
+"code": "TWII",
+"name": "加權指數",
+"last_date": "2026-06-02",
+"last_close": 45557.3086,
+"change_pct": 0.48
+}
+]
+}
