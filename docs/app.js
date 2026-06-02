@@ -51,10 +51,49 @@ chartEl.addEventListener('dblclick', () => chart.timeScale().fitContent());
 
 const sel = document.getElementById('stock');
 const statEl = document.getElementById('stat');
+const legendEl = document.getElementById('legend');
+
+let rows = [], rowMap = new Map(), curName = '';
+
+// 把 crosshair 回傳的時間統一成 'YYYY-MM-DD' 字串，用來查當天那一列
+function timeKey(t) {
+  if (t == null) return null;
+  if (typeof t === 'string') return t;
+  if (typeof t === 'object' && t.year)
+    return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+  return String(t);
+}
+
+function fmtVol(v) { return v == null ? '—' : Number(v).toLocaleString('en-US'); }
+
+// 更新左上角資訊列為第 idx 列那一天的詳細資料
+function updateLegend(idx) {
+  const r = rows[idx];
+  if (!r) { legendEl.innerHTML = ''; return; }
+  const prev = rows[idx - 1];
+  const chg = (prev && prev.close) ? (r.close - prev.close) / prev.close * 100 : 0;
+  const cls = chg >= 0 ? 'up' : 'down', sign = chg >= 0 ? '▲' : '▼';
+  const v = (k) => r[k] == null ? '—' : r[k];
+  legendEl.innerHTML =
+    `<span class="nm">${curName}</span>　<span class="lbl">${r.time}</span>　` +
+    `開 ${r.open}　高 ${r.high}　低 ${r.low}　收 <b>${r.close}</b> ` +
+    `<span class="${cls}">${sign}${Math.abs(chg).toFixed(2)}%</span>　量 ${fmtVol(r.volume)}　` +
+    `<span class="c5">MA5 ${v('ma5')}</span>　<span class="c20">MA20 ${v('ma20')}</span>　<span class="c60">MA60 ${v('ma60')}</span>`;
+}
+
+// 滑鼠移到某一天 → 顯示那天；移出圖表 → 顯示最新一天
+chart.subscribeCrosshairMove(param => {
+  const key = timeKey(param.time);
+  const i = key != null ? rowMap.get(key) : undefined;
+  updateLegend(i == null ? rows.length - 1 : i);
+});
 
 async function loadStock(code, name) {
   const data = await (await fetch(`data/${code}.json?v=${Date.now()}`)).json();
-  const rows = data.rows;
+  rows = data.rows;
+  rowMap = new Map();
+  rows.forEach((r, i) => rowMap.set(r.time, i));
+  curName = name;
 
   candle.setData(rows.map(r => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close })));
   for (const k of ['ma5', 'ma20', 'ma60'])
@@ -74,6 +113,7 @@ async function loadStock(code, name) {
   const chg = prev.close ? ((last.close - prev.close) / prev.close * 100) : 0;
   const cls = chg >= 0 ? 'up' : 'down', sign = chg >= 0 ? '▲' : '▼';
   statEl.innerHTML = `${name} <b>${last.close}</b> <span class="${cls}">${sign}${Math.abs(chg).toFixed(2)}%</span> <small>(${last.time})</small>`;
+  updateLegend(rows.length - 1);   // 預設先顯示最新一天，滑鼠移到某天再更新
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
