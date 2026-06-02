@@ -33,6 +33,14 @@ const bbOpt = { color: BB_COLOR, lineWidth: 1, lineStyle: LightweightCharts.Line
 const bbUpper = chart.addLineSeries(bbOpt);
 const bbLower = chart.addLineSeries(bbOpt);
 
+// 型態線（折線 + 頸線）：預設隱藏，只畫在偵測到的型態區間內、不延伸全圖
+const wmLineOpt = { color: '#5e35b1', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, visible: false };
+const triLineOpt = { color: '#00838f', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, visible: false };
+const wmPolySeries = chart.addLineSeries(wmLineOpt);
+const wmNeckSeries = chart.addLineSeries({ ...wmLineOpt, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+const triPolySeries = chart.addLineSeries(triLineOpt);
+const triNeckSeries = chart.addLineSeries({ ...triLineOpt, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed });
+
 function bollinger(rows, period, mult) {
   const up = [], lo = [];
   for (let i = period - 1; i < rows.length; i++) {
@@ -233,69 +241,122 @@ function updateRebal() {
 
 chart.timeScale().subscribeVisibleLogicalRangeChange(updateRebal);
 
-// ── hw12 型態：W底/M頭(5點視窗)、三重頂/底(7點視窗)。以 ZigZag 擺動點取代趨勢切段 ──
-const ZZ_PCT = 0.10;      // ZigZag 反轉門檻（擺動點靈敏度；越大→點越少、型態越大）
+// ── hw12 型態：W底/M頭(5點)、三重頂/底(7點)。用 DB 寫入的真 Trend 切段（與 hw12 一致）──
 const WM_DIFF = 0.10;     // W/M 的 b、d 兩點價差上限（沿用 hw12）
 
-function zigzag(data, pct) {
-  const n = data.length; if (n < 2) return [];
-  const piv = []; let dir = 0, li = 0, lp = data[0].close;
-  for (let i = 1; i < n; i++) {
-    const p = data[i].close;
-    if (dir <= 0) {
-      if (p <= lp) { lp = p; li = i; }
-      else if (p >= lp * (1 + pct)) { piv.push({ i: li, time: data[li].time, price: data[li].close, type: 'valley' }); dir = 1; lp = p; li = i; }
-    } else {
-      if (p >= lp) { lp = p; li = i; }
-      else if (p <= lp * (1 - pct)) { piv.push({ i: li, time: data[li].time, price: data[li].close, type: 'peak' }); dir = -1; lp = p; li = i; }
-    }
+function findSegments(d) {            // 依連續相同 Trend 切段 → [[s,e,trend], ...]
+  const segs = []; let i = 0;
+  while (i < d.length) {
+    let j = i; const tr = d[i].trend == null ? null : d[i].trend;
+    while (j + 1 < d.length && (d[j + 1].trend == null ? null : d[j + 1].trend) === tr) j++;
+    segs.push([i, j, tr]); i = j + 1;
   }
-  piv.push({ i: li, time: data[li].time, price: data[li].close, type: dir > 0 ? 'peak' : 'valley' });
-  return piv;
+  return segs;
 }
 
-function detectWM(piv) {       // W底(峰谷峰谷峰·突破頸線) / M頭(谷峰谷峰谷·跌破頸線)
+function segmentTurningPoints(d, segs) {   // 上漲→peak(最高) / 下跌→valley(最低) / 橫盤→flat(最近中位數)
+  const pts = [];
+  for (const [s, e, t] of segs) {
+    if (t === 'U') { let b = s; for (let k = s; k <= e; k++) if (d[k].high > d[b].high) b = k;
+      pts.push({ type: 'peak', i: b, time: d[b].time, price: d[b].high, close: d[b].close }); }
+    else if (t === 'D') { let b = s; for (let k = s; k <= e; k++) if (d[k].low < d[b].low) b = k;
+      pts.push({ type: 'valley', i: b, time: d[b].time, price: d[b].low, close: d[b].close }); }
+    else { const cs = []; for (let k = s; k <= e; k++) cs.push(d[k].close);
+      const so = cs.slice().sort((a, b) => a - b);
+      const med = so.length % 2 ? so[(so.length - 1) / 2] : (so[so.length / 2 - 1] + so[so.length / 2]) / 2;
+      let b = s, bd = Infinity; for (let k = s; k <= e; k++) { const dd = Math.abs(d[k].close - med); if (dd < bd) { bd = dd; b = k; } }
+      pts.push({ type: 'flat', i: b, time: d[b].time, price: d[b].close, close: d[b].close }); }
+  }
+  return pts;
+}
+
+function zigzagFilter(pts) {          // 去掉同方向多餘轉折點（hw12 zigzag）
+  if (pts.length < 2) return pts.slice();
+  const segs = []; let seg = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const c = pts[i], pv = pts[i - 1];
+    if ((c.price - pv.price) * (pv.price - seg[0].price) >= 0) seg.push(c);
+    else { if (seg.length >= 2) segs.push([seg[0], seg[seg.length - 1]]); seg = [pv, c]; }
+  }
+  if (seg.length >= 2) segs.push([seg[0], seg[seg.length - 1]]);
+  const zz = new Map();
+  for (const [a, b] of segs) { zz.set(a.time, a); zz.set(b.time, b); }
+  return [...zz.values()];
+}
+
+function detectWM(piv) {       // W底(峰谷峰谷峰·突破頸線) / M頭(谷峰谷峰谷·跌破頸線)；b/d 可為 flat
   const out = [];
   for (let i = 0; i + 4 < piv.length; i++) {
     const p = piv.slice(i, i + 5), t = p.map(x => x.type), pr = p.map(x => x.price);
     const neck = pr[2], diff = Math.abs(pr[1] - pr[3]) / pr[1];
-    if (t[0] === 'valley' && t[2] === 'valley' && t[4] === 'valley' && t[1] === 'peak' && t[3] === 'peak') {
-      if (diff <= WM_DIFF && pr[0] <= pr[2] && pr[4] < neck) out.push({ kind: 'M', e: p[4] });
-    } else if (t[0] === 'peak' && t[2] === 'peak' && t[4] === 'peak' && t[1] === 'valley' && t[3] === 'valley') {
-      if (diff <= WM_DIFF && pr[0] >= pr[2] && pr[4] > neck) out.push({ kind: 'W', e: p[4] });
+    if (t[0] === 'valley' && t[2] === 'valley' && t[4] === 'valley' && ['peak', 'flat'].includes(t[1]) && ['peak', 'flat'].includes(t[3])) {
+      if (diff <= WM_DIFF && pr[0] <= pr[2] && pr[4] < neck) out.push({ kind: 'M', p, neck });
+    } else if (t[0] === 'peak' && t[2] === 'peak' && t[4] === 'peak' && ['valley', 'flat'].includes(t[1]) && ['valley', 'flat'].includes(t[3])) {
+      if (diff <= WM_DIFF && pr[0] >= pr[2] && pr[4] > neck) out.push({ kind: 'W', p, neck });
     }
   }
   return out;
 }
 
-function detectTriple(piv) {   // 頸線過 p3/p5 斜線投影到 p7，p7 突破/跌破才成立
+function detectTriple(piv) {   // 頸線過 p3/p5 斜線投影到 p7，p7 收盤突破/跌破才成立；p2/4/6 可為 flat
   const out = [];
   for (let i = 0; i + 6 < piv.length; i++) {
     const p = piv.slice(i, i + 7), t = p.map(x => x.type);
     const odd = [t[0], t[2], t[4], t[6]], ev = [t[1], t[3], t[5]];
     const x3 = p[2].i, x5 = p[4].i, x7 = p[6].i, y3 = p[2].price, y5 = p[4].price;
     const slope = x5 !== x3 ? (y5 - y3) / (x5 - x3) : 0, proj = y3 + slope * (x7 - x3);
-    if (odd.every(x => x === 'valley') && ev.every(x => x === 'peak')) {
-      if (p[6].price < proj) out.push({ kind: 'TopT', g: p[6] });
-    } else if (odd.every(x => x === 'peak') && ev.every(x => x === 'valley')) {
-      if (p[6].price > proj) out.push({ kind: 'BotT', g: p[6] });
+    if (odd.every(x => x === 'valley') && ev.every(x => ['peak', 'flat'].includes(x))) {
+      if (p[6].close < proj) out.push({ kind: 'TopT', p });
+    } else if (odd.every(x => x === 'peak') && ev.every(x => ['valley', 'flat'].includes(x))) {
+      if (p[6].close > proj) out.push({ kind: 'BotT', p });
     }
   }
   return out;
 }
 
-function buildPatternMarkers() {
-  const piv = zigzag(rows, ZZ_PCT);
-  const uniq = (a) => { const s = new Set(); return a.filter(m => { const k = m.text + m.time; return s.has(k) ? false : (s.add(k), true); }); };
-  wmMarkers = uniq(detectWM(piv).map(x => x.kind === 'W'
-    ? { time: x.e.time, position: 'belowBar', color: '#1565c0', shape: 'arrowUp', text: 'W底' }
-    : { time: x.e.time, position: 'aboveBar', color: '#e65100', shape: 'arrowDown', text: 'M頭' }));
-  tripleMarkers = uniq(detectTriple(piv).map(x => x.kind === 'BotT'
-    ? { time: x.g.time, position: 'belowBar', color: '#1565c0', shape: 'arrowUp', text: '三重底' }
-    : { time: x.g.time, position: 'aboveBar', color: '#e65100', shape: 'arrowDown', text: '三重頂' }));
+function nonOverlap(pats) {     // 貪婪取不重疊（間隔≥1列，方便畫線斷開）
+  const s = pats.slice().sort((a, b) => a.p[0].i - b.p[0].i);
+  const out = []; let lastEnd = -2;
+  for (const x of s) if (x.p[0].i > lastEnd + 1) { out.push(x); lastEnd = x.p[x.p.length - 1].i; }
+  return out;
 }
 
-function refreshMarkers() {     // 合併「再平衡買賣點 + 已勾選的型態」一起標到 K 線
+function lineData(pats, ptsFn) {   // 串成單一 line series，型態間插 whitespace 斷線（限制延伸範圍）
+  const data = []; let prevEnd = -2;
+  for (const pat of pats) {
+    if (data.length && rows[prevEnd + 1]) data.push({ time: rows[prevEnd + 1].time });   // 斷線
+    for (const pt of ptsFn(pat)) data.push(pt);
+    prevEnd = pat.p[pat.p.length - 1].i;
+  }
+  return data;
+}
+
+function buildPatterns() {
+  const piv = zigzagFilter(segmentTurningPoints(rows, findSegments(rows)));
+  const wm = detectWM(piv), tri = detectTriple(piv);
+
+  // 標記（型態完成點，附文字標籤）
+  const uniq = (a) => { const s = new Set(); return a.filter(m => { const k = m.text + m.time; return s.has(k) ? false : (s.add(k), true); }); };
+  wmMarkers = uniq(wm.map(x => x.kind === 'W'
+    ? { time: x.p[4].time, position: 'belowBar', color: '#1565c0', shape: 'arrowUp', text: 'W底' }
+    : { time: x.p[4].time, position: 'aboveBar', color: '#e65100', shape: 'arrowDown', text: 'M頭' }));
+  tripleMarkers = uniq(tri.map(x => x.kind === 'BotT'
+    ? { time: x.p[6].time, position: 'belowBar', color: '#1565c0', shape: 'arrowUp', text: '三重底' }
+    : { time: x.p[6].time, position: 'aboveBar', color: '#e65100', shape: 'arrowDown', text: '三重頂' }));
+
+  // 線（折線 + 頸線）：取不重疊型態，各自限制在型態區間內
+  const wmN = nonOverlap(wm), triN = nonOverlap(tri);
+  wmPolySeries.setData(lineData(wmN, pat => pat.p.map(x => ({ time: x.time, value: x.price }))));
+  wmNeckSeries.setData(lineData(wmN, pat => [{ time: pat.p[0].time, value: pat.neck }, { time: pat.p[4].time, value: pat.neck }]));
+  triPolySeries.setData(lineData(triN, pat => pat.p.map(x => ({ time: x.time, value: x.price }))));
+  triNeckSeries.setData(lineData(triN, pat => {
+    const x3 = pat.p[2].i, x5 = pat.p[4].i, y3 = pat.p[2].price, y5 = pat.p[4].price;
+    const sl = x5 !== x3 ? (y5 - y3) / (x5 - x3) : 0;
+    return [{ time: pat.p[0].time, value: y3 + sl * (pat.p[0].i - x3) }, { time: pat.p[6].time, value: y3 + sl * (pat.p[6].i - x3) }];
+  }));
+}
+
+function refreshMarkers() {     // 合併「再平衡買賣點 + 已勾選的型態標記」一起標到 K 線
   let m = rebalMarkers.slice();
   const wm = document.getElementById('wm-toggle'), tri = document.getElementById('triple-toggle');
   if (wm && wm.checked) m = m.concat(wmMarkers);
@@ -304,13 +365,23 @@ function refreshMarkers() {     // 合併「再平衡買賣點 + 已勾選的型
   candle.setMarkers(m);
 }
 
+function patternsRefresh() {    // 依勾選顯示/隱藏型態線，並更新標記
+  const wmOn = !!(document.getElementById('wm-toggle') && document.getElementById('wm-toggle').checked);
+  const triOn = !!(document.getElementById('triple-toggle') && document.getElementById('triple-toggle').checked);
+  wmPolySeries.applyOptions({ visible: wmOn });
+  wmNeckSeries.applyOptions({ visible: wmOn });
+  triPolySeries.applyOptions({ visible: triOn });
+  triNeckSeries.applyOptions({ visible: triOn });
+  refreshMarkers();
+}
+
 async function loadStock(code, name) {
   const data = await (await fetch(`data/${code}.json?v=${Date.now()}`)).json();
   rows = data.rows;
   rowMap = new Map();
   rows.forEach((r, i) => rowMap.set(r.time, i));
   curName = name;
-  buildPatternMarkers();           // 偵測 W底/M頭、三重頂底（全史，依勾選顯示）
+  buildPatterns();                 // 偵測 W底/M頭、三重頂底（真 Trend 切段，依勾選顯示線與標記）
 
   candle.setData(rows.map(r => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close })));
   for (const k of ['ma5', 'ma20', 'ma60', 'ma120', 'ma240'])
@@ -334,6 +405,7 @@ async function loadStock(code, name) {
   buildYears();                    // 建立年份快捷列（只建一次）
   setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
   updateRebal();                   // 依目前可視範圍重算 50/50 再平衡
+  patternsRefresh();               // 依勾選顯示型態線與標記
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
@@ -346,7 +418,7 @@ bbCb.addEventListener('change', () => {
 });
 ['wm-toggle', 'triple-toggle'].forEach(id => {
   const el = document.getElementById(id);
-  if (el) el.addEventListener('change', refreshMarkers);
+  if (el) el.addEventListener('change', patternsRefresh);
 });
 
 (async function init() {

@@ -26,6 +26,9 @@ DAYS = int(os.environ.get('DAYS', '0'))      # 0 = 全部歷史；>0 則只取�
 NAMES = {'0050': '元大台灣50', '2303': '聯電', '2317': '鴻海', '2330': '台積電',
          '2382': '廣達', '2412': '中華電', '2454': '聯發科', '2881': '富邦金', 'TWII': '加權指數'}
 
+# Trend 文字 → 單字母代碼（U 上漲 / D 下跌 / F 橫盤），減少 JSON 體積
+TREND_CODE = {'上漲趨勢': 'U', '下跌趨勢': 'D', '橫盤整理': 'F'}
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'docs', 'data')
 
@@ -45,18 +48,19 @@ def main():
     for code in codes:
         top = f"TOP ({DAYS}) " if DAYS > 0 else ""
         cur.execute(
-            f"SELECT {top}[date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60,MA120,MA240 "
+            f"SELECT {top}[date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60,MA120,MA240,Trend "
             "FROM dbo.StockTrading_Live WHERE StockCode=%s ORDER BY [date] DESC", (code,))
         recs = cur.fetchall()[::-1]                       # 由舊到新
         if not recs:
             continue
         rows = []
-        for d, o, h, l, c, v, m5, m20, m60, m120, m240 in recs:
+        for d, o, h, l, c, v, m5, m20, m60, m120, m240, tr in recs:
             rows.append({'time': d.strftime('%Y-%m-%d'),
                          'open': _num(o), 'high': _num(h), 'low': _num(l), 'close': _num(c),
                          'volume': None if v is None else int(v),
                          'ma5': _num(m5), 'ma20': _num(m20), 'ma60': _num(m60),
-                         'ma120': _num(m120), 'ma240': _num(m240)})
+                         'ma120': _num(m120), 'ma240': _num(m240),
+                         'trend': TREND_CODE.get(tr)})
         name = NAMES.get(code, code)
         with open(os.path.join(OUT, f'{code}.json'), 'w', encoding='utf-8') as f:
             json.dump({'code': code, 'name': name, 'rows': rows}, f, ensure_ascii=False)
