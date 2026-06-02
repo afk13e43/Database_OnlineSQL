@@ -14,10 +14,11 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .stat { font-size: 15px; }
 .stat b { font-size: 17px; }
 .stat .up { color: #d50000; } .stat .down { color: #00897b; }
-.ma-toggles { margin-left: auto; display: flex; gap: 14px; font-size: 13px; }
+.ma-toggles { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; }
 .ma-toggles label { cursor: pointer; user-select: none; }
 .ma-toggles .ma5 { color: #42a5f5; } .ma-toggles .ma20 { color: #ff9800; } .ma-toggles .ma60 { color: #ab47bc; }
 .ma-toggles .ma120 { color: #ec407a; } .ma-toggles .ma240 { color: #8d6e63; }
+.ma-toggles .wm { color: #5e35b1; } .ma-toggles .triple { color: #00838f; }
 .ma-toggles .bb { color: #607d8b; }
 
 #chart-box {
