@@ -101,7 +101,7 @@ chart.subscribeCrosshairMove(param => {
   // 圓餅跟著游標日期：停在某天顯示那天，移出圖表回到期末
   if (rebalDaily) {
     const c = (key != null && rebalDaily.get(key)) || rebalEnd;
-    if (c) setPie(c.stock, c.cash, c === rebalEnd ? '期末 ' + rebalEnd.time : '當日 ' + c.time);
+    if (c) showDay(c, c === rebalEnd);
   }
 });
 
@@ -167,14 +167,16 @@ function simulateRebalance(slice) {
   };
   rebal(slice[0].close, slice[0].time);              // 首日建立 50/50
   let peak = -Infinity, maxDD = 0;
-  const comp = [];                                   // 每日（收盤後、含當日再平衡）的股票/現金
+  const comp = [];                                   // 每日（收盤後、含當日再平衡）累積指標
   for (const r of slice) {
-    const p = r.close, eq = cash + shares * p;
+    const p = r.close;
+    let eq = cash + shares * p;
     if (Math.abs(shares * p / eq - RB_TARGET) >= RB_DRIFT) rebal(p, r.time);   // 摸到 ±5% 就再平衡
-    comp.push({ time: r.time, stock: shares * p, cash });
-    const eq2 = cash + shares * p;
-    if (eq2 > peak) peak = eq2;
-    if ((eq2 - peak) / peak < maxDD) maxDD = (eq2 - peak) / peak;
+    eq = cash + shares * p;
+    if (eq > peak) peak = eq;
+    if ((eq - peak) / peak < maxDD) maxDD = (eq - peak) / peak;
+    comp.push({ time: r.time, stock: shares * p, cash, equity: eq, fee, tax,
+                maxDD: maxDD * 100, ret: (eq - INIT_CASH) / INIT_CASH * 100 });
   }
   const lastClose = slice[slice.length - 1].close;
   const finStock = shares * lastClose, finCash = cash, fin = finStock + finCash;
@@ -183,16 +185,32 @@ function simulateRebalance(slice) {
            fee, tax, cost: fee + tax, trades, comp };
 }
 
-// 更新右側圓餅（股票:現金）；label 標示是哪一天
-function setPie(stock, cash, label) {
-  const disc = document.getElementById('pieDisc'), leg = document.getElementById('pieLegend'), cap = document.getElementById('pieCap');
+// 圓餅（股票:現金）
+function setPie(stock, cash) {
+  const disc = document.getElementById('pieDisc'), leg = document.getElementById('pieLegend');
   if (!disc || !leg) return;
   const tot = stock + cash, sp = tot > 0 ? stock / tot * 100 : 0, cp = 100 - sp;
   disc.style.background = `conic-gradient(#1976d2 0 ${sp}%, #b0bec5 ${sp}% 100%)`;
   leg.innerHTML =
     `<div><span class="dot stock"></span>股票 ${sp.toFixed(1)}%　${money(stock)}</div>` +
     `<div><span class="dot cash"></span>現金 ${cp.toFixed(1)}%　${money(cash)}</div>`;
-  if (cap) cap.textContent = label;
+}
+
+// 用某一天的累積指標更新面板數字 + 圓餅（isEnd=true 代表期末）
+function showDay(c, isEnd) {
+  if (!c) return;
+  const g = id => document.getElementById(id);
+  setPie(c.stock, c.cash);
+  const tag = (isEnd ? '期末 ' : '當日 ') + c.time;
+  if (g('pieCap')) g('pieCap').textContent = tag;
+  if (g('rbAsof')) g('rbAsof').textContent = tag;
+  if (g('rbFinLbl')) g('rbFinLbl').textContent = isEnd ? '最終總金額' : '當日總金額';
+  if (g('rbFin')) g('rbFin').textContent = money(c.equity);
+  const ret = g('rbRet'); if (ret) { ret.textContent = (c.ret >= 0 ? '+' : '') + c.ret.toFixed(2) + '%'; ret.className = c.ret >= 0 ? 'up' : 'down'; }
+  if (g('rbMDD')) { g('rbMDD').textContent = c.maxDD.toFixed(2) + '%'; g('rbMDD').className = 'down'; }
+  if (g('rbCost')) g('rbCost').textContent = money(c.fee + c.tax);
+  if (g('rbFee')) g('rbFee').textContent = money(c.fee);
+  if (g('rbTax')) g('rbTax').textContent = money(c.tax);
 }
 
 function updateRebal() {
@@ -216,18 +234,17 @@ function updateRebal() {
     text: t.type === 'buy' ? '買' : '賣',
   }));
   refreshMarkers();
-  const rc = r.ret >= 0 ? 'up' : 'down';
   rebalEl.innerHTML =
     `<div class="rb-main">` +
       `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
-      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span>　·　<span id="rbAsof"></span></div>` +
       `<div class="rb-grid">` +
-        `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
-        `<div><span class="rb-lbl">報酬率</span><b class="${rc}">${r.ret >= 0 ? '+' : ''}${r.ret.toFixed(2)}%</b></div>` +
-        `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
-        `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
+        `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
+        `<div><span class="rb-lbl">報酬率</span><b id="rbRet"></b></div>` +
+        `<div><span class="rb-lbl">最大回撤</span><b id="rbMDD"></b></div>` +
+        `<div><span class="rb-lbl">交易成本</span><b id="rbCost"></b></div>` +
       `</div>` +
-      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
+      `<div class="rb-cost">交易手續費 <b id="rbFee"></b>（0.1425%·買賣各收）　＋　證交稅 <b id="rbTax"></b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
     `</div>` +
     `<div class="rb-pie">` +
       `<div class="pie" id="pieDisc"></div>` +
@@ -236,7 +253,7 @@ function updateRebal() {
     `</div>`;
   rebalDaily = new Map(r.comp.map(c => [c.time, c]));
   rebalEnd = r.comp[r.comp.length - 1];
-  setPie(rebalEnd.stock, rebalEnd.cash, '期末 ' + rebalEnd.time);   // 預設顯示期末，滑鼠移到某天再變
+  showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
 }
 
 chart.timeScale().subscribeVisibleLogicalRangeChange(updateRebal);
