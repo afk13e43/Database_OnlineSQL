@@ -45,17 +45,18 @@ def main():
     for code in codes:
         top = f"TOP ({DAYS}) " if DAYS > 0 else ""
         cur.execute(
-            f"SELECT {top}[date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60 "
+            f"SELECT {top}[date],[Open],[High],[Low],[Close],Volume,MA5,MA20,MA60,MA120,MA240 "
             "FROM dbo.StockTrading_Live WHERE StockCode=%s ORDER BY [date] DESC", (code,))
         recs = cur.fetchall()[::-1]                       # 由舊到新
         if not recs:
             continue
         rows = []
-        for d, o, h, l, c, v, m5, m20, m60 in recs:
+        for d, o, h, l, c, v, m5, m20, m60, m120, m240 in recs:
             rows.append({'time': d.strftime('%Y-%m-%d'),
                          'open': _num(o), 'high': _num(h), 'low': _num(l), 'close': _num(c),
                          'volume': None if v is None else int(v),
-                         'ma5': _num(m5), 'ma20': _num(m20), 'ma60': _num(m60)})
+                         'ma5': _num(m5), 'ma20': _num(m20), 'ma60': _num(m60),
+                         'ma120': _num(m120), 'ma240': _num(m240)})
         name = NAMES.get(code, code)
         with open(os.path.join(OUT, f'{code}.json'), 'w', encoding='utf-8') as f:
             json.dump({'code': code, 'name': name, 'rows': rows}, f, ensure_ascii=False)

@@ -17,9 +17,11 @@ const candle = chart.addCandlestickSeries({
   wickUpColor: RED, wickDownColor: GREEN,
 });
 const ma = {
-  ma5:  chart.addLineSeries({ color: '#42a5f5', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-  ma20: chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-  ma60: chart.addLineSeries({ color: '#ab47bc', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  ma5:   chart.addLineSeries({ color: '#42a5f5', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  ma20:  chart.addLineSeries({ color: '#ff9800', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  ma60:  chart.addLineSeries({ color: '#ab47bc', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+  ma120: chart.addLineSeries({ color: '#ec407a', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false }),
+  ma240: chart.addLineSeries({ color: '#8d6e63', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, visible: false }),
 };
 const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '', lastValueVisible: false, priceLineVisible: false });
 vol.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
@@ -130,7 +132,7 @@ async function loadStock(code, name) {
   curName = name;
 
   candle.setData(rows.map(r => ({ time: r.time, open: r.open, high: r.high, low: r.low, close: r.close })));
-  for (const k of ['ma5', 'ma20', 'ma60'])
+  for (const k of ['ma5', 'ma20', 'ma60', 'ma120', 'ma240'])
     ma[k].setData(rows.filter(r => r[k] != null).map(r => ({ time: r.time, value: r[k] })));
   const bb = bollinger(rows, 20, 2);
   bbUpper.setData(bb.up);
