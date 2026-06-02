@@ -7,7 +7,7 @@ header { padding: 20px 24px 14px; background: #fff; border-bottom: 1px solid #ee
 header h1 { margin: 0 0 4px; font-size: 20px; }
 .sub { margin: 0; color: #888; font-size: 13px; }
 
-main { max-width: 1000px; margin: 18px auto; padding: 0 16px; }
+main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 10px; }
 .pick { font-size: 14px; color: #555; }
 .controls select { font-size: 15px; padding: 5px 8px; margin-left: 4px; }
@@ -18,11 +18,18 @@ main { max-width: 1000px; margin: 18px auto; padding: 0 16px; }
 .ma-toggles label { cursor: pointer; user-select: none; }
 .ma-toggles .ma5 { color: #42a5f5; } .ma-toggles .ma20 { color: #ff9800; } .ma-toggles .ma60 { color: #ab47bc; }
 
-#chart {
+#chart-box {
+  position: relative;
   width: 100%; height: 460px;
   min-width: 320px; min-height: 240px;
-  background: #fff; border: 1px solid #eee; border-radius: 6px;
-  resize: both; overflow: hidden;   /* 使用者可拖右下角自由縮放，圖表 autoSize 會跟著重繪 */
+  max-width: 100%;
+  margin: 0 auto;                   /* 置中 → 拖寬時兩側對稱外擴 */
+}
+#chart { width: 100%; height: 100%; background: #fff; border: 1px solid #eee; border-radius: 6px; overflow: hidden; }
+#grip {
+  position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
+  cursor: nwse-resize; z-index: 5; border-bottom-right-radius: 6px;
+  background: repeating-linear-gradient(135deg, #b0b0b0 0 2px, transparent 2px 4px);
 }
 .hint { color: #aaa; font-size: 12px; margin-top: 8px; }
 
@@ -31,5 +38,5 @@ footer code { background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
 
 @media (max-width: 640px) {
   .ma-toggles { margin-left: 0; }
-  #chart { height: 360px; }
+  #chart-box { height: 360px; }
 }

@@ -67,3 +67,30 @@ document.querySelectorAll('.ma-toggles input').forEach(cb => {
   const def = [...sel.options].find(o => o.value === '2330') || sel.options[0];
   if (def) { sel.value = def.value; loadStock(def.value, def.dataset.name); }
 })();
+
+// 自訂縮放把手：拖右下角 → 寬度左右對稱外擴、高度往下延伸；圖表 autoSize 自動重繪
+(function () {
+  const box = document.getElementById('chart-box');
+  const grip = document.getElementById('grip');
+  if (!box || !grip) return;
+  let sx, sy, sw, sh;
+  function move(e) {
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    const maxW = box.parentElement.clientWidth;          // 不超過版面寬，才能維持置中
+    const w = Math.min(maxW, Math.max(320, sw + dx * 2)); // ×2：左右各擴 dx → 對稱
+    const h = Math.max(240, sh + dy);
+    box.style.width = w + 'px';
+    box.style.height = h + 'px';
+  }
+  function up() {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  }
+  grip.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    sx = e.clientX; sy = e.clientY;
+    sw = box.offsetWidth; sh = box.offsetHeight;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+})();
