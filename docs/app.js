@@ -81,8 +81,8 @@ document.querySelectorAll('.ma-toggles input').forEach(cb => {
   let sx, sy, sw, sh;
   function move(e) {
     const dx = e.clientX - sx, dy = e.clientY - sy;
-    const maxW = box.parentElement.clientWidth;          // 不超過版面寬，才能維持置中
-    const w = Math.min(maxW, Math.max(320, sw + dx * 2)); // ×2：左右各擴 dx → 對稱
+    const maxW = Math.round(window.innerWidth * 0.96);    // 最大可拉到接近整個視窗寬
+    const w = Math.min(maxW, Math.max(320, sw + dx * 2)); // ×2：左右各擴 dx → 對稱外擴
     const h = Math.max(240, sh + dy);
     box.style.width = w + 'px';
     box.style.height = h + 'px';
