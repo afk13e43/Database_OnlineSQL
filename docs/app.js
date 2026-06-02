@@ -137,22 +137,25 @@ function money(x) { return Math.round(x).toLocaleString('en-US'); }
 function simulateRebalance(slice) {
   if (!slice || slice.length < 2) return null;
   let cash = INIT_CASH, shares = 0, fee = 0, tax = 0;
-  const rebal = (price) => {
+  const trades = [];
+  const rebal = (price, time) => {
     const eq = cash + shares * price;
     const delta = RB_TARGET * eq - shares * price;   // 目標股票市值 − 目前股票市值
     if (delta > 0) {                                 // 買進（收手續費）
       const f = delta * FEE_RATE;
       shares += delta / price; cash -= delta + f; fee += f;
+      trades.push({ time, type: 'buy' });
     } else if (delta < 0) {                          // 賣出（收手續費 + 證交稅）
       const v = -delta, f = v * FEE_RATE, t = v * TAX_RATE;
       shares -= v / price; cash += v - f - t; fee += f; tax += t;
+      trades.push({ time, type: 'sell' });
     }
   };
-  rebal(slice[0].close);                             // 首日建立 50/50
+  rebal(slice[0].close, slice[0].time);              // 首日建立 50/50
   let peak = -Infinity, maxDD = 0;
   for (const r of slice) {
     const p = r.close, eq = cash + shares * p;
-    if (Math.abs(shares * p / eq - RB_TARGET) >= RB_DRIFT) rebal(p);   // 摸到 ±10% 就再平衡
+    if (Math.abs(shares * p / eq - RB_TARGET) >= RB_DRIFT) rebal(p, r.time);   // 摸到 ±10% 就再平衡
     const eq2 = cash + shares * p;
     if (eq2 > peak) peak = eq2;
     if ((eq2 - peak) / peak < maxDD) maxDD = (eq2 - peak) / peak;
@@ -160,7 +163,7 @@ function simulateRebalance(slice) {
   const fin = cash + shares * slice[slice.length - 1].close;
   return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
            fin, ret: (fin - INIT_CASH) / INIT_CASH * 100, maxDD: maxDD * 100,
-           fee, tax, cost: fee + tax };
+           fee, tax, cost: fee + tax, trades };
 }
 
 function updateRebal() {
@@ -170,13 +173,22 @@ function updateRebal() {
   const from = Math.max(0, Math.ceil(vr.from)), to = Math.min(rows.length - 1, Math.floor(vr.to));
   const r = simulateRebalance(rows.slice(from, to + 1));
   if (!r) {
+    candle.setMarkers([]);
     rebalEl.innerHTML = '<div class="rb-hd">50/50 再平衡</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
     return;
   }
+  // 把買/賣交易點標到 K 線上（紅▲買、綠▼賣）；需依時間遞增
+  candle.setMarkers(r.trades.map(t => ({
+    time: t.time,
+    position: t.type === 'buy' ? 'belowBar' : 'aboveBar',
+    color: t.type === 'buy' ? '#d50000' : '#00897b',
+    shape: t.type === 'buy' ? 'arrowUp' : 'arrowDown',
+    text: t.type === 'buy' ? '買' : '賣',
+  })));
   const rc = r.ret >= 0 ? 'up' : 'down';
   rebalEl.innerHTML =
     `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±10% 自動再平衡</div>` +
-    `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}</div>` +
+    `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
     `<div class="rb-grid">` +
       `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
       `<div><span class="rb-lbl">報酬率</span><b class="${rc}">${r.ret >= 0 ? '+' : ''}${r.ret.toFixed(2)}%</b></div>` +
