@@ -275,8 +275,22 @@ function updateRebal() {
   showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
 }
 
-chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-  if (lockCb && lockCb.checked) return;            // 區間已鎖定，縮放/平移不重算回測
+// 鎖定時把可視範圍夾在 [起,迄] 之間：拖出去就拉回來（保持寬度），裡面仍可縮放看細節
+function clampToLock(vr) {
+  if (!vr || !rows.length || !startEl.value || !endEl.value) return;
+  let f = findStartIdx(startEl.value), t = findEndIdx(endEl.value);
+  if (f > t) [f, t] = [t, f];
+  const EPS = 0.01, width = vr.to - vr.from;
+  let nf = vr.from, nt = vr.to;
+  if (nf < f - EPS) { nf = f; nt = f + width; }    // 拖過左界 → 整段往右貼齊
+  if (nt > t + EPS) { nt = t; nf = t - width; }     // 拖過右界 → 整段往左貼齊
+  if (nf < f) nf = f;                               // 視窗比鎖定區還寬 → 貼齊整段
+  if (Math.abs(nf - vr.from) > EPS || Math.abs(nt - vr.to) > EPS)
+    chart.timeScale().setVisibleLogicalRange({ from: nf, to: nt });
+}
+
+chart.timeScale().subscribeVisibleLogicalRangeChange((vr) => {
+  if (lockCb && lockCb.checked) { clampToLock(vr); return; }   // 鎖定：只夾範圍、不重算回測
   updateRebal();
 });
 
@@ -291,6 +305,7 @@ if (lockCb) {
         const f = Math.max(0, Math.ceil(vr.from)), t = Math.min(rows.length - 1, Math.floor(vr.to));
         startEl.value = rows[f].time;              // 凍結「目前畫面」的起迄
         endEl.value = rows[t].time;
+        chart.timeScale().setVisibleLogicalRange({ from: f, to: t });   // 貼齊鎖定範圍
       }
     }
     updateRebal();
