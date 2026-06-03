@@ -348,11 +348,12 @@ if (lockCb) {
 function refreshMarkers() {     // 依「已選顯示」的策略把買賣點標到 K 線（第1組在上、第2組在下）
   const out = [];
   stratShown.forEach((id, slot) => {
-    const pos = slot === 0 ? 'aboveBar' : 'belowBar';
+    const above = slot === 0;
+    const pos = above ? 'aboveBar' : 'belowBar';
+    const shape = above ? 'arrowDown' : 'arrowUp';   // 箭頭一律指向當天 K 線（上方組朝下、下方組朝上）
     for (const t of (stratTrades[id] || []))
-      out.push({ time: t.time, position: pos,
+      out.push({ time: t.time, position: pos, shape, size: 2,   // size:2 放大箭頭
         color: t.type === 'buy' ? '#d50000' : '#00897b',
-        shape: t.type === 'buy' ? 'arrowUp' : 'arrowDown',
         text: t.type === 'buy' ? '買' : '賣' });
   });
   out.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
