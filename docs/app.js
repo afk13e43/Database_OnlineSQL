@@ -299,7 +299,7 @@ if (lockCb) {
     if (!rows.length || !startEl.value || !endEl.value) return;
     let f = findStartIdx(startEl.value), t = findEndIdx(endEl.value);
     if (f > t) [f, t] = [t, f];
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, f - 1), to: t + 1 });
+    chart.timeScale().setVisibleLogicalRange({ from: f, to: t });   // 精準對齊所選起迄，不多留前一天
     updateRebal();
   }
   startEl.addEventListener('change', syncChartToDates);
