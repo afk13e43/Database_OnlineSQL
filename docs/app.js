@@ -270,7 +270,7 @@ function updateRebal() {
   setStrategyTrades('rebal', r.trades);   // r.trades = [{time, type:'buy'|'sell'}]，顯示與否由勾選決定
   rebalEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd"><label class="rb-show"><input type="checkbox" id="show-rebal-trades"${stratShown.indexOf('rebal') >= 0 ? ' checked' : ''}> 圖表顯示買賣點</label>　50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
+      `<div class="rb-hd"><input type="checkbox" id="show-rebal-trades"${stratShown.indexOf('rebal') >= 0 ? ' checked' : ''}> 50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
       `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span>　·　<span id="rbAsof"></span></div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
