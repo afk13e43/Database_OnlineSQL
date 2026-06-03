@@ -346,10 +346,10 @@ if (lockCb) {
 }
 
 // 自訂買賣箭頭（lightweight-charts primitive）：內建 marker 的 size 會連寬一起放大，
-// 改用 primitive 自己畫一根「細長、指向當天 K 線」的箭頭。
-const ARROW_LEN = 30;    // 箭身長度(px) — 想更長就調大
-const ARROW_HEAD = 5;    // 箭頭寬/高(px)
-const ARROW_GAP = 6;     // 箭尖與 K 線高/低點的間距(px)
+// 改用 primitive 自畫一個「原本大小、指向當天 K 線」的精簡箭頭三角，並可調離 K 線的高度。
+const ARROW_HW = 5;      // 箭頭半寬(px)
+const ARROW_HH = 9;      // 箭頭高(px)
+const ARROW_GAP = 16;    // 箭尖與 K 線高/低點的間距(px) — 想更高就調大
 
 class TradeArrowsRenderer {
   constructor(src) { this._src = src; }
@@ -359,24 +359,22 @@ class TradeArrowsRenderer {
     const ts = s._chart.timeScale();
     target.useMediaCoordinateSpace(scope => {
       const ctx = scope.context;
+      ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
       for (const it of s._items) {
         const x = ts.timeToCoordinate(it.time);
         const yRef = s._series.priceToCoordinate(it.price);
         if (x == null || yRef == null) continue;
-        const dir = it.dir === 'down' ? -1 : 1;        // down：在上方、朝下指（往螢幕上方延伸=負）
-        const tip = yRef - dir * ARROW_GAP;            // 箭尖（靠近 K 線那端）
-        const tail = tip - dir * ARROW_LEN;            // 箭尾（遠離 K 線那端）
-        ctx.strokeStyle = ctx.fillStyle = it.color;
-        ctx.lineWidth = 1.6;
-        ctx.beginPath(); ctx.moveTo(x, tail); ctx.lineTo(x, tip); ctx.stroke();   // 箭身（細）
-        ctx.beginPath();                               // 箭頭三角
+        const above = it.dir === 'down';               // 上方組：在高點上方、箭頭朝下
+        const tip = above ? yRef - ARROW_GAP : yRef + ARROW_GAP;   // 箭尖（靠近 K 線那端）
+        const base = above ? tip - ARROW_HH : tip + ARROW_HH;      // 箭尾兩角
+        ctx.fillStyle = it.color;
+        ctx.beginPath();
         ctx.moveTo(x, tip);
-        ctx.lineTo(x - ARROW_HEAD, tip - dir * ARROW_HEAD);
-        ctx.lineTo(x + ARROW_HEAD, tip - dir * ARROW_HEAD);
+        ctx.lineTo(x - ARROW_HW, base);
+        ctx.lineTo(x + ARROW_HW, base);
         ctx.closePath(); ctx.fill();
-        ctx.font = '11px sans-serif'; ctx.textAlign = 'center';   // 買/賣 標在箭尾外側
-        ctx.textBaseline = dir < 0 ? 'bottom' : 'top';
-        ctx.fillText(it.text, x, tail - dir * 2);
+        ctx.textBaseline = above ? 'bottom' : 'top';   // 買/賣 標在箭尾外側
+        ctx.fillText(it.text, x, base + (above ? -2 : 2));
       }
     });
   }
