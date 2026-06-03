@@ -371,6 +371,8 @@ bbCb.addEventListener('change', () => {
   bbUpper.applyOptions({ visible: bbCb.checked });
   bbLower.applyOptions({ visible: bbCb.checked });
 });
+const volCb = document.getElementById('vol-toggle');
+volCb.addEventListener('change', () => vol.applyOptions({ visible: volCb.checked }));
 
 (async function init() {
   const idx = await (await fetch(`data/index.json?v=${Date.now()}`)).json();
