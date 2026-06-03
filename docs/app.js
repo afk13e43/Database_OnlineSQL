@@ -197,7 +197,7 @@ function setPie(stock, cash) {
   const disc = document.getElementById('pieDisc'), leg = document.getElementById('pieLegend');
   if (!disc || !leg) return;
   const tot = stock + cash, sp = tot > 0 ? stock / tot * 100 : 0, cp = 100 - sp;
-  disc.style.background = `conic-gradient(#1976d2 0 ${sp}%, #b0bec5 ${sp}% 100%)`;
+  disc.style.background = `conic-gradient(#b0bec5 0 ${cp}%, #1976d2 ${cp}% 100%)`;   // 先現金(右)後股票(左)
   leg.innerHTML =
     `<div><span class="dot stock"></span>股票 ${sp.toFixed(1)}%　${money(stock)}</div>` +
     `<div><span class="dot cash"></span>現金 ${cp.toFixed(1)}%　${money(cash)}</div>`;
