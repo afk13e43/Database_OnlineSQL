@@ -345,19 +345,68 @@ if (lockCb) {
   endEl.addEventListener('change', syncChartToDates);
 }
 
-function refreshMarkers() {     // 依「已選顯示」的策略把買賣點標到 K 線（第1組在上、第2組在下）
-  const out = [];
+// 自訂買賣箭頭（lightweight-charts primitive）：內建 marker 的 size 會連寬一起放大，
+// 改用 primitive 自己畫一根「細長、指向當天 K 線」的箭頭。
+const ARROW_LEN = 30;    // 箭身長度(px) — 想更長就調大
+const ARROW_HEAD = 5;    // 箭頭寬/高(px)
+const ARROW_GAP = 6;     // 箭尖與 K 線高/低點的間距(px)
+
+class TradeArrowsRenderer {
+  constructor(src) { this._src = src; }
+  draw(target) {
+    const s = this._src;
+    if (!s._chart || !s._series || !s._items.length) return;
+    const ts = s._chart.timeScale();
+    target.useMediaCoordinateSpace(scope => {
+      const ctx = scope.context;
+      for (const it of s._items) {
+        const x = ts.timeToCoordinate(it.time);
+        const yRef = s._series.priceToCoordinate(it.price);
+        if (x == null || yRef == null) continue;
+        const dir = it.dir === 'down' ? -1 : 1;        // down：在上方、朝下指（往螢幕上方延伸=負）
+        const tip = yRef - dir * ARROW_GAP;            // 箭尖（靠近 K 線那端）
+        const tail = tip - dir * ARROW_LEN;            // 箭尾（遠離 K 線那端）
+        ctx.strokeStyle = ctx.fillStyle = it.color;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(x, tail); ctx.lineTo(x, tip); ctx.stroke();   // 箭身（細）
+        ctx.beginPath();                               // 箭頭三角
+        ctx.moveTo(x, tip);
+        ctx.lineTo(x - ARROW_HEAD, tip - dir * ARROW_HEAD);
+        ctx.lineTo(x + ARROW_HEAD, tip - dir * ARROW_HEAD);
+        ctx.closePath(); ctx.fill();
+        ctx.font = '11px sans-serif'; ctx.textAlign = 'center';   // 買/賣 標在箭尾外側
+        ctx.textBaseline = dir < 0 ? 'bottom' : 'top';
+        ctx.fillText(it.text, x, tail - dir * 2);
+      }
+    });
+  }
+}
+class TradeArrows {                 // ISeriesPrimitive
+  constructor() { this._items = []; this._chart = null; this._series = null; this._req = null;
+    this._view = { renderer: () => new TradeArrowsRenderer(this), zOrder: () => 'top' }; }
+  setItems(items) { this._items = items; if (this._req) this._req(); }
+  attached(p) { this._chart = p.chart; this._series = p.series; this._req = p.requestUpdate; }
+  detached() { this._chart = this._series = this._req = null; }
+  updateAllViews() {}
+  paneViews() { return [this._view]; }
+}
+const tradeArrows = new TradeArrows();
+candle.attachPrimitive(tradeArrows);
+
+function refreshMarkers() {     // 依「已選顯示」的策略產生箭頭（第1組在 K 線上方朝下、第2組在下方朝上）
+  const items = [];
   stratShown.forEach((id, slot) => {
-    const above = slot === 0;
-    const pos = above ? 'aboveBar' : 'belowBar';
-    const shape = above ? 'arrowDown' : 'arrowUp';   // 箭頭一律指向當天 K 線（上方組朝下、下方組朝上）
-    for (const t of (stratTrades[id] || []))
-      out.push({ time: t.time, position: pos, shape, size: 2,   // size:2 放大箭頭
+    const down = slot === 0;
+    for (const t of (stratTrades[id] || [])) {
+      const r = rows[rowMap.get(t.time)];
+      if (!r) continue;
+      items.push({ time: t.time, dir: down ? 'down' : 'up',
+        price: down ? r.high : r.low,            // 上方箭頭貼最高價、下方箭頭貼最低價
         color: t.type === 'buy' ? '#d50000' : '#00897b',
         text: t.type === 'buy' ? '買' : '賣' });
+    }
   });
-  out.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-  candle.setMarkers(out);
+  tradeArrows.setItems(items);
 }
 
 async function loadStock(code, name) {
