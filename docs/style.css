@@ -70,7 +70,7 @@ main { max-width: 1200px; margin: 18px auto; padding: 0 16px; }
 .rebal .rb-cost { margin-top: 10px; color: #666; font-size: 12px; border-top: 1px dashed #eee; padding-top: 8px; }
 .rebal .rb-cost b { color: #444; }
 .rebal .rb-note { color: #999; }
-.rebal .rb-pie { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rebal .rb-pie { display: flex; flex-direction: column; align-items: center; gap: 8px; order: -1; }
 .rebal .pie { width: 120px; height: 120px; border-radius: 50%; box-shadow: 0 0 0 1px #eee inset; }
 .rebal .pie-legend { font-size: 12px; line-height: 1.7; }
 .rebal .pie-legend > div { display: flex; align-items: center; gap: 6px; }
