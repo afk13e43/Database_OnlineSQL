@@ -63,7 +63,7 @@ let rows = [], rowMap = new Map(), curName = '', yearsBuilt = false, rebalDaily 
 // ── 策略買賣點標記：一次最多顯示兩組，依勾選順序第1組在K線上方、第2組在下方 ──
 const MAX_SHOWN = 2;
 const stratTrades = {};   // 策略 id → [{time, type:'buy'|'sell'}]
-const stratShown = [];    // 已勾選顯示的策略 id（最多 MAX_SHOWN 個；index 0→上方, 1→下方）
+const stratShown = ['rebal'];   // 已勾選顯示的策略 id（最多 MAX_SHOWN 個；index 0→上方, 1→下方）；預設顯示再平衡
 
 function setStrategyTrades(id, trades) {            // 策略算出新買賣點時呼叫
   stratTrades[id] = trades || [];
@@ -270,7 +270,7 @@ function updateRebal() {
   setStrategyTrades('rebal', r.trades);   // r.trades = [{time, type:'buy'|'sell'}]，顯示與否由勾選決定
   rebalEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
+      `<div class="rb-hd"><label class="rb-show"><input type="checkbox" id="show-rebal-trades"${stratShown.indexOf('rebal') >= 0 ? ' checked' : ''}> 圖表顯示買賣點</label>　50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
       `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span>　·　<span id="rbAsof"></span></div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
@@ -288,6 +288,14 @@ function updateRebal() {
   rebalDaily = new Map(r.comp.map(c => [c.time, c]));
   rebalEnd = r.comp[r.comp.length - 1];
   showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
+  // rb-hd 內的勾選每次重建都要重綁（一次最多顯示兩組策略）
+  const rbShowCb = document.getElementById('show-rebal-trades');
+  if (rbShowCb) rbShowCb.addEventListener('change', () => {
+    if (!toggleStrategyShown('rebal', rbShowCb.checked)) {
+      rbShowCb.checked = false;
+      alert('一次最多只能在圖表顯示兩組策略的買賣點');
+    }
+  });
 }
 
 // 鎖定時把可視範圍夾在 [起,迄] 之間：拖出去就拉回來（保持寬度），裡面仍可縮放看細節
@@ -396,18 +404,6 @@ bbCb.addEventListener('change', () => {
 });
 const volCb = document.getElementById('vol-toggle');
 volCb.addEventListener('change', () => vol.applyOptions({ visible: volCb.checked }));
-
-// 「圖表顯示買賣點」勾選 → 把 50/50 再平衡策略加入/移除顯示組（一次最多兩組）
-const showRebalCb = document.getElementById('show-rebal-trades');
-if (showRebalCb) {
-  if (showRebalCb.checked) stratShown.push('rebal');     // 預設顯示
-  showRebalCb.addEventListener('change', () => {
-    if (!toggleStrategyShown('rebal', showRebalCb.checked)) {
-      showRebalCb.checked = false;                        // 已達上限：退回勾選
-      alert('一次最多只能在圖表顯示兩組策略的買賣點');
-    }
-  });
-}
 
 (async function init() {
   const idx = await (await fetch(`data/index.json?v=${Date.now()}`)).json();
