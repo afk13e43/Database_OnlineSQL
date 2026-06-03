@@ -6,7 +6,8 @@ const chart = LightweightCharts.createChart(chartEl, {
   layout: { background: { color: '#ffffff' }, textColor: '#333' },
   grid: { vertLines: { color: '#f3f3f3' }, horzLines: { color: '#f3f3f3' } },
   rightPriceScale: { borderColor: '#ddd' },
-  timeScale: { borderColor: '#ddd' },
+  // minBarSpacing 預設 0.5px/根，2700+ 根會塞不下而砍掉左邊最舊資料（「全部」只到 2019）；調小即可完整顯示自 2015 起
+  timeScale: { borderColor: '#ddd', minBarSpacing: 0.04 },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
   autoSize: true,
 });
@@ -138,6 +139,20 @@ const RB_TARGET = 0.5;       // 股票目標權重 50%
 const RB_DRIFT = 0.05;       // 偏離 ±5% 觸發再平衡（±10% 較適合槓桿 ETF）
 const rebalEl = document.getElementById('rebal');
 
+// 固定回測區間：勾選後用 rb-start / rb-end 指定的日期當回測範圍，縮放/平移圖表都不影響
+const lockCb = document.getElementById('lock-range');
+const startEl = document.getElementById('rb-start');
+const endEl = document.getElementById('rb-end');
+
+function findStartIdx(d) {                          // 第一個 >= d 的交易日（找不到→最後一筆）
+  for (let i = 0; i < rows.length; i++) if (rows[i].time >= d) return i;
+  return rows.length - 1;
+}
+function findEndIdx(d) {                            // 最後一個 <= d 的交易日（找不到→第一筆）
+  for (let i = rows.length - 1; i >= 0; i--) if (rows[i].time <= d) return i;
+  return 0;
+}
+
 function money(x) { return Math.round(x).toLocaleString('en-US'); }
 
 function simulateRebalance(slice) {
@@ -207,9 +222,17 @@ function showDay(c, isEnd) {
 
 function updateRebal() {
   if (!rebalEl || !rows.length) return;
-  const vr = chart.timeScale().getVisibleLogicalRange();
-  if (!vr) return;
-  const from = Math.max(0, Math.ceil(vr.from)), to = Math.min(rows.length - 1, Math.floor(vr.to));
+  let from, to;
+  if (lockCb && lockCb.checked && startEl.value && endEl.value) {
+    from = findStartIdx(startEl.value);            // 區間已鎖定：用日期輸入框決定範圍
+    to = findEndIdx(endEl.value);
+    if (from > to) [from, to] = [to, from];
+  } else {
+    const vr = chart.timeScale().getVisibleLogicalRange();   // 未鎖定：跟著目前可視範圍
+    if (!vr) return;
+    from = Math.max(0, Math.ceil(vr.from));
+    to = Math.min(rows.length - 1, Math.floor(vr.to));
+  }
   const r = simulateRebalance(rows.slice(from, to + 1));
   if (!r) {
     rebalMarkers = []; refreshMarkers();
@@ -248,7 +271,29 @@ function updateRebal() {
   showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
 }
 
-chart.timeScale().subscribeVisibleLogicalRangeChange(updateRebal);
+chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+  if (lockCb && lockCb.checked) return;            // 區間已鎖定，縮放/平移不重算回測
+  updateRebal();
+});
+
+// 勾「固定回測區間」→ 以目前可視範圍的起迄日當預設，並鎖定（之後可微調日期框）
+if (lockCb) {
+  lockCb.addEventListener('change', () => {
+    const on = lockCb.checked;
+    startEl.disabled = endEl.disabled = !on;
+    if (on && rows.length) {
+      const vr = chart.timeScale().getVisibleLogicalRange();
+      if (vr) {
+        const f = Math.max(0, Math.ceil(vr.from)), t = Math.min(rows.length - 1, Math.floor(vr.to));
+        startEl.value = rows[f].time;              // 凍結「目前畫面」的起迄
+        endEl.value = rows[t].time;
+      }
+    }
+    updateRebal();
+  });
+  startEl.addEventListener('change', updateRebal);
+  endEl.addEventListener('change', updateRebal);
+}
 
 function refreshMarkers() {     // 把再平衡買/賣交易點標到 K 線
   const m = rebalMarkers.slice();
@@ -269,6 +314,10 @@ async function loadStock(code, name) {
   const bb = bollinger(rows, 20, 2);
   bbUpper.setData(bb.up);
   bbLower.setData(bb.lo);
+  if (startEl && rows.length) {                    // 固定區間的日期選擇限制在這檔資料範圍內
+    const lo = rows[0].time, hi = rows[rows.length - 1].time;
+    startEl.min = endEl.min = lo; startEl.max = endEl.max = hi;
+  }
   vol.setData(rows.map(r => ({
     time: r.time, value: r.volume || 0,
     color: (r.close >= r.open) ? 'rgba(213,0,0,.35)' : 'rgba(0,137,123,.35)',
