@@ -59,7 +59,30 @@ const legendEl = document.getElementById('legend');
 const yearsEl = document.getElementById('years');
 
 let rows = [], rowMap = new Map(), curName = '', yearsBuilt = false, rebalDaily = null, rebalEnd = null;
-let rebalMarkers = [];
+
+// ── 策略買賣點標記：一次最多顯示兩組，依勾選順序第1組在K線上方、第2組在下方 ──
+const MAX_SHOWN = 2;
+const stratTrades = {};   // 策略 id → [{time, type:'buy'|'sell'}]
+const stratShown = [];    // 已勾選顯示的策略 id（最多 MAX_SHOWN 個；index 0→上方, 1→下方）
+
+function setStrategyTrades(id, trades) {            // 策略算出新買賣點時呼叫
+  stratTrades[id] = trades || [];
+  refreshMarkers();
+}
+
+// 勾/取消顯示某策略；已達上限且為新策略時回傳 false（呼叫端負責退回勾選）
+function toggleStrategyShown(id, on) {
+  const i = stratShown.indexOf(id);
+  if (on) {
+    if (i >= 0) return true;
+    if (stratShown.length >= MAX_SHOWN) return false;
+    stratShown.push(id);
+  } else if (i >= 0) {
+    stratShown.splice(i, 1);
+  }
+  refreshMarkers();
+  return true;
+}
 
 // 把 crosshair 回傳的時間統一成 'YYYY-MM-DD' 字串，用來查當天那一列
 function timeKey(t) {
@@ -239,20 +262,12 @@ function updateRebal() {
   }
   const r = simulateRebalance(rows.slice(from, to + 1));
   if (!r) {
-    rebalMarkers = []; refreshMarkers();
+    setStrategyTrades('rebal', []);
     rebalDaily = null;
     rebalEl.innerHTML = '<div class="rb-hd">50/50 再平衡</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
     return;
   }
-  // 收集再平衡買/賣交易點（紅▲買、綠▼賣），與型態標記合併顯示
-  rebalMarkers = r.trades.map(t => ({
-    time: t.time,
-    position: t.type === 'buy' ? 'belowBar' : 'aboveBar',
-    color: t.type === 'buy' ? '#d50000' : '#00897b',
-    shape: t.type === 'buy' ? 'arrowUp' : 'arrowDown',
-    text: t.type === 'buy' ? '買' : '賣',
-  }));
-  refreshMarkers();
+  setStrategyTrades('rebal', r.trades);   // r.trades = [{time, type:'buy'|'sell'}]，顯示與否由勾選決定
   rebalEl.innerHTML =
     `<div class="rb-main">` +
       `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
@@ -322,10 +337,18 @@ if (lockCb) {
   endEl.addEventListener('change', syncChartToDates);
 }
 
-function refreshMarkers() {     // 把再平衡買/賣交易點標到 K 線
-  const m = rebalMarkers.slice();
-  m.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-  candle.setMarkers(m);
+function refreshMarkers() {     // 依「已選顯示」的策略把買賣點標到 K 線（第1組在上、第2組在下）
+  const out = [];
+  stratShown.forEach((id, slot) => {
+    const pos = slot === 0 ? 'aboveBar' : 'belowBar';
+    for (const t of (stratTrades[id] || []))
+      out.push({ time: t.time, position: pos,
+        color: t.type === 'buy' ? '#d50000' : '#00897b',
+        shape: t.type === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: t.type === 'buy' ? '買' : '賣' });
+  });
+  out.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+  candle.setMarkers(out);
 }
 
 async function loadStock(code, name) {
@@ -373,6 +396,18 @@ bbCb.addEventListener('change', () => {
 });
 const volCb = document.getElementById('vol-toggle');
 volCb.addEventListener('change', () => vol.applyOptions({ visible: volCb.checked }));
+
+// 「圖表顯示買賣點」勾選 → 把 50/50 再平衡策略加入/移除顯示組（一次最多兩組）
+const showRebalCb = document.getElementById('show-rebal-trades');
+if (showRebalCb) {
+  if (showRebalCb.checked) stratShown.push('rebal');     // 預設顯示
+  showRebalCb.addEventListener('change', () => {
+    if (!toggleStrategyShown('rebal', showRebalCb.checked)) {
+      showRebalCb.checked = false;                        // 已達上限：退回勾選
+      alert('一次最多只能在圖表顯示兩組策略的買賣點');
+    }
+  });
+}
 
 (async function init() {
   const idx = await (await fetch(`data/index.json?v=${Date.now()}`)).json();
