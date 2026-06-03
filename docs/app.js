@@ -232,6 +232,9 @@ function updateRebal() {
     if (!vr) return;
     from = Math.max(0, Math.ceil(vr.from));
     to = Math.min(rows.length - 1, Math.floor(vr.to));
+    if (startEl && rows[from] && rows[to]) {                 // 日期框即時反映目前圖表的起迄
+      startEl.value = rows[from].time; endEl.value = rows[to].time;
+    }
   }
   const r = simulateRebalance(rows.slice(from, to + 1));
   if (!r) {
@@ -291,8 +294,16 @@ if (lockCb) {
     }
     updateRebal();
   });
-  startEl.addEventListener('change', updateRebal);
-  endEl.addEventListener('change', updateRebal);
+  // 鎖定狀態下手動改日期 → 同步把上方圖表縮放到該日期範圍（updateRebal 也跟著重算）
+  function syncChartToDates() {
+    if (!rows.length || !startEl.value || !endEl.value) return;
+    let f = findStartIdx(startEl.value), t = findEndIdx(endEl.value);
+    if (f > t) [f, t] = [t, f];
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, f - 1), to: t + 1 });
+    updateRebal();
+  }
+  startEl.addEventListener('change', syncChartToDates);
+  endEl.addEventListener('change', syncChartToDates);
 }
 
 function refreshMarkers() {     // 把再平衡買/賣交易點標到 K 線
