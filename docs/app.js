@@ -7,7 +7,8 @@ const chart = LightweightCharts.createChart(chartEl, {
   grid: { vertLines: { color: '#f3f3f3' }, horzLines: { color: '#f3f3f3' } },
   rightPriceScale: { borderColor: '#ddd' },
   // minBarSpacing 預設 0.5px/根，2700+ 根會塞不下而砍掉左邊最舊資料（「全部」只到 2019）；調小即可完整顯示自 2015 起
-  timeScale: { borderColor: '#ddd', minBarSpacing: 0.04 },
+  // fixLeftEdge/fixRightEdge：禁止拖曳到沒有資料的左右空白區
+  timeScale: { borderColor: '#ddd', minBarSpacing: 0.04, fixLeftEdge: true, fixRightEdge: true },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
   autoSize: true,
 });
