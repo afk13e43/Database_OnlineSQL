@@ -1,6 +1,7 @@
 name: Daily stock update
 
-# 每日抓台股日線寫進 Azure SQL，並用 GitHub Pages（Actions 部署）更新網站資料
+# ① 每日排程：抓台股日線寫進 Azure SQL + 重建網站資料 + 部署 Pages
+# ② push 到 docs/：只重建網站資料 + 部署（跳過寫 DB，給前端改動快速上線）
 on:
   workflow_dispatch:                 # 可在 Actions 頁手動觸發（測試 / 全量回填）
     inputs:
@@ -10,6 +11,12 @@ on:
         default: false
   schedule:
     - cron: '0 12 * * 1-5'           # 每週一~五 12:00 UTC = 台灣 20:00（收盤後、資料已穩定）
+  push:
+    branches: [main]
+    paths:                           # 只在前端/部署設定變動時觸發（避免無關 push 也部署）
+      - 'docs/**'
+      - 'build_site.py'
+      - '.github/workflows/daily-update.yml'
 
 # 用 Actions 部署 Pages 所需權限（不再 push 回 repo，故不需 contents: write）
 permissions:
@@ -17,7 +24,7 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:                         # 避免多次部署互相打架
+concurrency:                         # 避免排程與 push 觸發的部署互相打架
   group: pages
   cancel-in-progress: false
 
@@ -38,7 +45,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch & update Azure SQL
+      - name: Fetch & update Azure SQL     # 只在排程/手動時寫 DB；push 觸發時跳過
+        if: github.event_name != 'push'
         env:
           DB_SERVER:   ${{ secrets.DB_SERVER }}
           DB_DATABASE: ${{ secrets.DB_DATABASE }}
@@ -47,13 +55,18 @@ jobs:
           BACKFILL:    ${{ inputs.backfill }}     # 排程觸發時為空字串 → 每日增量模式
         run: python fetch_daily.py
 
-      - name: Build website data (docs/data)
+      - name: Build website data (docs/data)     # 從 SQL 讀回最新資料產生 JSON（push 時也跑，確保資料最新）
         env:
           DB_SERVER:   ${{ secrets.DB_SERVER }}
           DB_DATABASE: ${{ secrets.DB_DATABASE }}
           DB_USER:     ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: python build_site.py
+
+      - name: Cache-bust front-end assets        # 給 app.js/style.css 加 commit SHA 版本參數，免瀏覽器快取舊檔
+        run: |
+          sha="${GITHUB_SHA::8}"
+          sed -i "s|href=\"style.css\"|href=\"style.css?v=$sha\"|; s|src=\"app.js\"|src=\"app.js?v=$sha\"|" docs/index.html
 
       - name: Upload Pages artifact          # 把整個 docs/（網頁 + 剛產生的 data）打包
         uses: actions/upload-pages-artifact@v3
