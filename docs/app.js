@@ -60,28 +60,32 @@ const yearsEl = document.getElementById('years');
 
 let rows = [], rowMap = new Map(), curName = '', yearsBuilt = false, rebalDaily = null, rebalEnd = null;
 
-// ── 策略買賣點標記：一次最多顯示兩組，依勾選順序第1組在K線上方、第2組在下方 ──
-const MAX_SHOWN = 2;
-const stratTrades = {};   // 策略 id → [{time, type:'buy'|'sell'}]
-const stratShown = ['rebal'];   // 已勾選顯示的策略 id（最多 MAX_SHOWN 個；index 0→上方, 1→下方）；預設顯示再平衡
+// ── 策略買賣點標記：兩個固定插槽（上方/下方），各可獨立選擇顯示的策略 ──
+const stratTrades   = {};              // 策略 id → [{time, type:'buy'|'sell'}]
+const stratRegistry = {};             // 策略 id → 顯示名稱（供下拉選單使用）
+const stratSlots    = ['rebal', null]; // [上方插槽 id, 下方插槽 id]；null = 不顯示
 
-function setStrategyTrades(id, trades) {            // 策略算出新買賣點時呼叫
+function setStrategyTrades(id, trades) {
   stratTrades[id] = trades || [];
   refreshMarkers();
 }
 
-// 勾/取消顯示某策略；已達上限且為新策略時回傳 false（呼叫端負責退回勾選）
-function toggleStrategyShown(id, on) {
-  const i = stratShown.indexOf(id);
-  if (on) {
-    if (i >= 0) return true;
-    if (stratShown.length >= MAX_SHOWN) return false;
-    stratShown.push(id);
-  } else if (i >= 0) {
-    stratShown.splice(i, 1);
-  }
-  refreshMarkers();
-  return true;
+// 注冊策略名稱並更新下拉選單（名稱未變則跳過，避免捲動時頻繁重建 DOM）
+function registerStrategy(id, label) {
+  if (stratRegistry[id] === label) return;
+  stratRegistry[id] = label;
+  refreshSlotSelects();
+}
+
+function refreshSlotSelects() {
+  const opts = Object.entries(stratRegistry)
+    .map(([id, lbl]) => `<option value="${id}">${lbl}</option>`).join('');
+  ['slot-top', 'slot-bot'].forEach((elId, slot) => {
+    const sel = document.getElementById(elId);
+    if (!sel) return;
+    sel.innerHTML = `<option value="">（不顯示）</option>${opts}`;
+    sel.value = stratSlots[slot] || '';
+  });
 }
 
 // 把 crosshair 回傳的時間統一成 'YYYY-MM-DD' 字串，用來查當天那一列
@@ -270,7 +274,7 @@ function updateRebal() {
   setStrategyTrades('rebal', r.trades);   // r.trades = [{time, type:'buy'|'sell'}]，顯示與否由勾選決定
   rebalEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd"><input type="checkbox" id="show-rebal-trades"${stratShown.indexOf('rebal') >= 0 ? ' checked' : ''}> 50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
+      `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
       `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span>　·　<span id="rbAsof"></span></div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
@@ -288,14 +292,6 @@ function updateRebal() {
   rebalDaily = new Map(r.comp.map(c => [c.time, c]));
   rebalEnd = r.comp[r.comp.length - 1];
   showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
-  // rb-hd 內的勾選每次重建都要重綁（一次最多顯示兩組策略）
-  const rbShowCb = document.getElementById('show-rebal-trades');
-  if (rbShowCb) rbShowCb.addEventListener('change', () => {
-    if (!toggleStrategyShown('rebal', rbShowCb.checked)) {
-      rbShowCb.checked = false;
-      alert('一次最多只能在圖表顯示兩組策略的買賣點');
-    }
-  });
 }
 
 // 鎖定時把可視範圍夾在 [起,迄] 之間：拖出去就拉回來（保持寬度），裡面仍可縮放看細節
@@ -315,6 +311,7 @@ function clampToLock(vr) {
 chart.timeScale().subscribeVisibleLogicalRangeChange((vr) => {
   if (lockCb && lockCb.checked) { clampToLock(vr); return; }   // 鎖定：只夾範圍、不重算回測
   updateRebal();
+  updateGranville();
 });
 
 // 勾「固定回測區間」→ 以目前可視範圍的起迄日當預設，並鎖定（之後可微調日期框）
@@ -332,6 +329,7 @@ if (lockCb) {
       }
     }
     updateRebal();
+    updateGranville();
   });
   // 鎖定狀態下手動改日期 → 同步把上方圖表縮放到該日期範圍（updateRebal 也跟著重算）
   function syncChartToDates() {
@@ -340,9 +338,213 @@ if (lockCb) {
     if (f > t) [f, t] = [t, f];
     chart.timeScale().setVisibleLogicalRange({ from: f, to: t });   // 精準對齊所選起迄，不多留前一天
     updateRebal();
+    updateGranville();
   }
   startEl.addEventListener('change', syncChartToDates);
   endEl.addEventListener('change', syncChartToDates);
+}
+
+// ── 葛蘭碧八大法則策略 ──
+
+// 複製 sp_CalculateTrend 邏輯：依指定 MA 欄位動態計算趨勢，不使用 JSON 內建的 MA5 固定趨勢
+function computeTrendDynamic(rows, maKey, lookback = 5, threshold = 3) {
+  const n = rows.length;
+  const isUp = new Array(n).fill(0), isDown = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const cur = rows[i][maKey], prev = rows[i - 1][maKey];
+    if (cur != null && prev != null) {
+      if (cur > prev) isUp[i] = 1;
+      else if (cur < prev) isDown[i] = 1;
+    }
+  }
+  const trend = new Array(n).fill('F');
+  for (let i = 0; i < n; i++) {
+    let up = 0, down = 0;
+    for (let j = Math.max(0, i - lookback + 1); j <= i; j++) { up += isUp[j]; down += isDown[j]; }
+    if (up >= threshold) trend[i] = 'U';
+    else if (down >= threshold) trend[i] = 'D';
+  }
+  return trend;
+}
+
+// 完整實作 sp_GranvilleEightRules 的十個訊號（法則 1-8、44、88）
+function computeGranvilleSignals(rows, trendArr, params) {
+  const { maKey, toleranceDays, devLow, devHigh, daysThreshold, priceRange } = params;
+  const n = rows.length;
+  const signals = [];
+  const dev = rows.map(r => (r[maKey] != null && r[maKey] !== 0) ? (r.close - r[maKey]) / r[maKey] * 100 : null);
+
+  for (let i = 1; i < n; i++) {
+    const r = rows[i], p = rows[i - 1];
+    const ma = r[maKey], pma = p[maKey];
+    const tr = trendArr[i], ptr = trendArr[i - 1];
+    if (ma == null || pma == null) continue;
+
+    // 成交量倍數（20日均量）
+    let sumV = 0, cntV = 0;
+    for (let j = Math.max(0, i - 19); j <= i; j++) { if (rows[j].volume) { sumV += rows[j].volume; cntV++; } }
+    const avgV = cntV > 0 ? sumV / cntV : null;
+    const sv = avgV > 0 && r.volume != null && r.volume / avgV >= 1.5;
+
+    // 前 7 天在 MA 上方/下方的天數（對應 SQL ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING）
+    let dAbove = 0, dUnder = 0;
+    for (let j = Math.max(0, i - 7); j < i; j++) {
+      if (rows[j][maKey] != null) {
+        if (rows[j].close > rows[j][maKey]) dAbove++;
+        else if (rows[j].close < rows[j][maKey]) dUnder++;
+      }
+    }
+
+    // 法則 1（買）：趨勢由下跌轉上漲
+    if (ptr === 'D' && tr === 'U')
+      signals.push({ time: r.time, type: 'buy', rule: 1, strength: sv ? '強勢買入訊號(突破)' : '一般訊號' });
+
+    // 法則 5（賣）：趨勢由上漲轉下跌
+    if (ptr === 'U' && tr === 'D')
+      signals.push({ time: r.time, type: 'sell', rule: 5, strength: sv ? '強勢賣出訊號(跌破)' : '一般訊號' });
+
+    // 穿越均線判斷
+    const downCross = p.close > pma && r.close < ma;
+    const upCross   = p.close < pma && r.close > ma;
+    if (downCross || upCross) {
+      // 取容忍天數內的最後一天（對應 SQL TOP 1 ... ORDER BY RowNum DESC）
+      const tk = Math.min(n - 1, i + toleranceDays);
+      const fClose = rows[tk].close, fMa = rows[tk][maKey];
+      // 法則 2（買）：假跌破，在容忍天數內站回均線上方
+      if (downCross && tr === 'U' && fMa != null && fClose > fMa && dAbove >= daysThreshold)
+        signals.push({ time: r.time, type: 'buy', rule: 2, strength: sv ? '強勢買入訊號(假跌破)' : '一般訊號' });
+      // 法則 6（賣）：假突破，在容忍天數內跌回均線下方
+      if (upCross && tr === 'D' && fMa != null && fClose < fMa && dUnder >= daysThreshold)
+        signals.push({ time: r.time, type: 'sell', rule: 6, strength: sv ? '強勢賣出訊號(假突破)' : '一般訊號' });
+    }
+
+    // 法則 3（買）：上漲趨勢 + 前日收黑接近均線後今日收紅反彈（支撐）
+    if (tr === 'U' && p.close < p.open && r.close > r.open && r.close > p.close &&
+        ((p.low - pma <= priceRange && p.low - pma >= 0) ||
+         (p.close - pma <= priceRange && p.close - pma >= 0)))
+      signals.push({ time: r.time, type: 'buy', rule: 3, strength: sv ? '強支撐反彈買入' : '一般訊號' });
+
+    // 法則 7（賣）：下跌趨勢 + 前日收紅接近均線後今日收黑（反壓）
+    if (tr === 'D' && p.close > p.open && r.close < r.open && r.close < p.close &&
+        ((pma - p.high <= priceRange && p.high <= pma) ||
+         (pma - p.close <= priceRange && p.close <= pma)))
+      signals.push({ time: r.time, type: 'sell', rule: 7, strength: sv ? '強反壓力道賣出' : '一般訊號' });
+
+    // 法則 4 & 44（買）：下跌趨勢 + 負乖離
+    const d = dev[i], pd = dev[i - 1];
+    if (tr === 'D' && d != null && d < 0) {
+      if (pd != null && d > pd && pd <= devLow)
+        signals.push({ time: r.time, type: 'buy', rule: 44, strength: '抄底反彈-負乖離率開始縮小' });
+      else if (d <= devLow)
+        signals.push({ time: r.time, type: 'buy', rule: 4, strength: d <= devLow * 1.5 ? '抄底機會!!' : '一般訊號' });
+    }
+
+    // 法則 8 & 88（賣）：上漲趨勢 + 正乖離
+    if (tr === 'U' && d != null && d > 0) {
+      if (pd != null && d < pd && pd >= devHigh)
+        signals.push({ time: r.time, type: 'sell', rule: 88, strength: '正乖離開始縮小' });
+      else if (d >= devHigh)
+        signals.push({ time: r.time, type: 'sell', rule: 8, strength: d >= devHigh * 1.5 ? '超買回檔賣出(反轉)' : '一般訊號' });
+    }
+  }
+  return signals;
+}
+
+// 回測模擬（參照 stock_granville_backtest.py 的部位比例設計）
+function simulateGranvilleBacktest(slice, signals) {
+  if (!slice || slice.length < 2 || !signals.length) return null;
+  const INIT = 10000000;
+  const buyR  = { 1: 1.0, 2: 0.8, 44: 0.6, 3: 0.5, 4: 0.3 };
+  const sellR = { 5: 1.0, 6: 0.8, 88: 0.6, 7: 0.5, 8: 0.3 };
+  let cash = INIT, shares = 0, peak = -Infinity, maxDD = 0;
+  const trades = [];
+  const sigMap = new Map();
+  for (const s of signals) { if (!sigMap.has(s.time)) sigMap.set(s.time, []); sigMap.get(s.time).push(s); }
+  for (const r of slice) {
+    for (const s of (sigMap.get(r.time) || [])) {
+      if (s.type === 'buy' && cash > r.close) {
+        const n = Math.floor(cash * (buyR[s.rule] ?? 0.5) / r.close);
+        if (n <= 0) continue;
+        cash -= n * r.close; shares += n;
+        trades.push({ time: r.time, type: 'buy' });
+      } else if (s.type === 'sell' && shares > 0) {
+        const n = Math.max(1, Math.floor(shares * (sellR[s.rule] ?? 0.5)));
+        cash += n * r.close; shares -= n;
+        trades.push({ time: r.time, type: 'sell' });
+      }
+    }
+    const eq = cash + shares * r.close;
+    if (eq > peak) peak = eq;
+    if (peak > 0 && (eq - peak) / peak < maxDD) maxDD = (eq - peak) / peak;
+  }
+  const fin = cash + shares * slice[slice.length - 1].close;
+  return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
+           fin, ret: (fin - INIT) / INIT * 100, maxDD: maxDD * 100, trades,
+           buyCount: trades.filter(t => t.type === 'buy').length,
+           sellCount: trades.filter(t => t.type === 'sell').length };
+}
+
+function getGranParams() {
+  return {
+    maKey:        document.getElementById('gran-ma')?.value     || 'ma20',
+    toleranceDays:parseInt(document.getElementById('gran-tol')?.value   || '5'),
+    devLow:       parseFloat(document.getElementById('gran-dev-lo')?.value || '-15'),
+    devHigh:      parseFloat(document.getElementById('gran-dev-hi')?.value || '15'),
+    daysThreshold: 6,
+    priceRange:   30.0,
+  };
+}
+
+const GRAN_RULE = { 1:'法則1', 2:'法則2', 3:'法則3', 4:'法則4', 44:'法則44',
+                    5:'法則5', 6:'法則6', 7:'法則7', 8:'法則8', 88:'法則88' };
+
+function updateGranville() {
+  const granEl = document.getElementById('gran');
+  if (!granEl || !rows.length) return;
+  let from, to;
+  if (lockCb && lockCb.checked && startEl.value && endEl.value) {
+    from = findStartIdx(startEl.value); to = findEndIdx(endEl.value);
+    if (from > to) [from, to] = [to, from];
+  } else {
+    const vr = chart.timeScale().getVisibleLogicalRange();
+    if (!vr) return;
+    from = Math.max(0, Math.ceil(vr.from));
+    to   = Math.min(rows.length - 1, Math.floor(vr.to));
+  }
+  if (to - from < 1) {
+    setStrategyTrades('gran', []);
+    granEl.innerHTML = '<div class="rb-hd">葛蘭碧八大法則</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
+    return;
+  }
+  const params = getGranParams();
+  const trendArr  = computeTrendDynamic(rows, params.maKey);
+  const allSigs   = computeGranvilleSignals(rows, trendArr, params);
+  const sliceSet  = new Set(rows.slice(from, to + 1).map(r => r.time));
+  const signals   = allSigs.filter(s => sliceSet.has(s.time));
+  setStrategyTrades('gran', signals.map(s => ({ time: s.time, type: s.type })));
+  const r = simulateGranvilleBacktest(rows.slice(from, to + 1), signals);
+  const maLbl = params.maKey.toUpperCase();
+  if (!r) {
+    granEl.innerHTML =
+      `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）</div>` +
+      `<div class="rb-note">回測期間無訊號</div>`;
+  } else {
+    const cnt = {};
+    for (const s of signals) cnt[s.rule] = (cnt[s.rule] || 0) + 1;
+    granEl.innerHTML =
+      `<div class="rb-main">` +
+        `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）· 交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+        `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(10000000)} · 共 ${signals.length} 個訊號</div>` +
+        `<div class="rb-grid">` +
+          `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
+          `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
+          `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
+          `<div><span class="rb-lbl">買入訊號</span><b>${r.buyCount}</b></div>` +
+          `<div><span class="rb-lbl">賣出訊號</span><b>${r.sellCount}</b></div>` +
+        `</div>` +
+        `<div class="gran-rules">${Object.entries(cnt).sort(([a],[b])=>+a-+b).map(([rule,n])=>`<span class="gran-tag">${GRAN_RULE[rule]||'法則'+rule} ×${n}</span>`).join('')}</div>` +
+      `</div>`;
+  }
 }
 
 // 自訂買賣箭頭（lightweight-charts primitive）：內建 marker 的 size 會連寬一起放大，
@@ -391,9 +593,10 @@ class TradeArrows {                 // ISeriesPrimitive
 const tradeArrows = new TradeArrows();
 candle.attachPrimitive(tradeArrows);
 
-function refreshMarkers() {     // 依「已選顯示」的策略產生箭頭（第1組在 K 線上方朝下、第2組在下方朝上）
+function refreshMarkers() {     // 依插槽設定產生箭頭（插槽0在 K 線上方朝下、插槽1在下方朝上）
   const items = [];
-  stratShown.forEach((id, slot) => {
+  stratSlots.forEach((id, slot) => {
+    if (!id) return;
     const down = slot === 0;
     for (const t of (stratTrades[id] || [])) {
       const r = rows[rowMap.get(t.time)];
@@ -440,6 +643,7 @@ async function loadStock(code, name) {
   buildYears();                    // 建立年份快捷列（只建一次）
   setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
   updateRebal();                   // 依目前可視範圍重算 50/50 再平衡
+  updateGranville();               // 依目前可視範圍重算葛蘭碧策略
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
@@ -452,6 +656,33 @@ bbCb.addEventListener('change', () => {
 });
 const volCb = document.getElementById('vol-toggle');
 volCb.addEventListener('change', () => vol.applyOptions({ visible: volCb.checked }));
+
+['gran-ma', 'gran-tol', 'gran-dev-lo', 'gran-dev-hi'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', updateGranville);
+});
+
+// 初始化策略插槽下拉選單（未來新增策略只需呼叫 registerStrategy 即可自動出現在選單中）
+(function initStrategySlots() {
+  registerStrategy('rebal', '50/50 再平衡');
+  registerStrategy('gran',  '葛蘭碧八大法則');
+  ['slot-top', 'slot-bot'].forEach((elId, slot) => {
+    const sel = document.getElementById(elId);
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+      const chosen = sel.value || null;
+      // 若兩個插槽選了同一策略，清空另一個
+      const other = 1 - slot;
+      if (chosen && chosen === stratSlots[other]) {
+        stratSlots[other] = null;
+        const otherSel = document.getElementById(slot === 0 ? 'slot-bot' : 'slot-top');
+        if (otherSel) otherSel.value = '';
+      }
+      stratSlots[slot] = chosen;
+      refreshMarkers();
+    });
+  });
+})();
 
 (async function init() {
   const idx = await (await fetch(`data/index.json?v=${Date.now()}`)).json();
