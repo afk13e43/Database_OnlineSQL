@@ -450,26 +450,29 @@ function computeGranvilleSignals(rows, trendArr, params) {
   return signals;
 }
 
-// 回測模擬（參照 stock_granville_backtest.py 的部位比例設計）
+// 回測模擬（參照 stock_granville_backtest.py 的部位比例設計）；含交易手續費 + 證交稅，與 50/50 同基準
 function simulateGranvilleBacktest(slice, signals) {
   if (!slice || slice.length < 2 || !signals.length) return null;
-  const INIT = 10000000;
+  const INIT = INIT_CASH;
   const buyR  = { 1: 1.0, 2: 0.8, 44: 0.6, 3: 0.5, 4: 0.3 };
   const sellR = { 5: 1.0, 6: 0.8, 88: 0.6, 7: 0.5, 8: 0.3 };
-  let cash = INIT, shares = 0, peak = -Infinity, maxDD = 0;
+  let cash = INIT, shares = 0, fee = 0, tax = 0, peak = -Infinity, maxDD = 0;
   const trades = [];
   const sigMap = new Map();
   for (const s of signals) { if (!sigMap.has(s.time)) sigMap.set(s.time, []); sigMap.get(s.time).push(s); }
   for (const r of slice) {
     for (const s of (sigMap.get(r.time) || [])) {
-      if (s.type === 'buy' && cash > r.close) {
-        const n = Math.floor(cash * (buyR[s.rule] ?? 0.5) / r.close);
+      if (s.type === 'buy') {
+        const budget = cash * (buyR[s.rule] ?? 0.5);
+        const n = Math.floor(budget / (r.close * (1 + FEE_RATE)));   // 預留手續費，確保現金夠付
         if (n <= 0) continue;
-        cash -= n * r.close; shares += n;
+        const cost = n * r.close, f = cost * FEE_RATE;
+        cash -= cost + f; shares += n; fee += f;
         trades.push({ time: r.time, type: 'buy' });
       } else if (s.type === 'sell' && shares > 0) {
         const n = Math.max(1, Math.floor(shares * (sellR[s.rule] ?? 0.5)));
-        cash += n * r.close; shares -= n;
+        const proceeds = n * r.close, f = proceeds * FEE_RATE, t = proceeds * TAX_RATE;
+        cash += proceeds - f - t; shares -= n; fee += f; tax += t;
         trades.push({ time: r.time, type: 'sell' });
       }
     }
@@ -480,6 +483,7 @@ function simulateGranvilleBacktest(slice, signals) {
   const fin = cash + shares * slice[slice.length - 1].close;
   return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
            fin, ret: (fin - INIT) / INIT * 100, maxDD: maxDD * 100, trades,
+           fee, tax, cost: fee + tax,
            buyCount: trades.filter(t => t.type === 'buy').length,
            sellCount: trades.filter(t => t.type === 'sell').length };
 }
@@ -497,6 +501,17 @@ function getGranParams() {
 
 const GRAN_RULE = { 1:'法則1', 2:'法則2', 3:'法則3', 4:'法則4', 44:'法則44',
                     5:'法則5', 6:'法則6', 7:'法則7', 8:'法則8', 88:'法則88' };
+
+// 葛蘭碧訊號只跟 rows + 參數有關（與可視範圍無關）→ 快取，scroll/縮放時不再重算全表
+let _granRowsRef = null, _granParamsKey = '', _granAllSigs = null;
+function granvilleSignalsCached(params) {
+  const pk = `${params.maKey}|${params.toleranceDays}|${params.devLow}|${params.devHigh}|${params.daysThreshold}|${params.priceRange}`;
+  if (_granRowsRef === rows && _granParamsKey === pk && _granAllSigs) return _granAllSigs;   // 命中快取
+  const trendArr = computeTrendDynamic(rows, params.maKey);
+  _granAllSigs = computeGranvilleSignals(rows, trendArr, params);
+  _granRowsRef = rows; _granParamsKey = pk;   // 換股票(rows 換新陣列)或改參數時才會失效重算
+  return _granAllSigs;
+}
 
 function updateGranville() {
   const granEl = document.getElementById('gran');
@@ -517,8 +532,7 @@ function updateGranville() {
     return;
   }
   const params = getGranParams();
-  const trendArr  = computeTrendDynamic(rows, params.maKey);
-  const allSigs   = computeGranvilleSignals(rows, trendArr, params);
+  const allSigs   = granvilleSignalsCached(params);
   const sliceSet  = new Set(rows.slice(from, to + 1).map(r => r.time));
   const signals   = allSigs.filter(s => sliceSet.has(s.time));
   setStrategyTrades('gran', signals.map(s => ({ time: s.time, type: s.type })));
@@ -541,7 +555,9 @@ function updateGranville() {
           `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
           `<div><span class="rb-lbl">買入訊號</span><b>${r.buyCount}</b></div>` +
           `<div><span class="rb-lbl">賣出訊號</span><b>${r.sellCount}</b></div>` +
+          `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
         `</div>` +
+        `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
         `<div class="gran-rules">${Object.entries(cnt).sort(([a],[b])=>+a-+b).map(([rule,n])=>`<span class="gran-tag">${GRAN_RULE[rule]||'法則'+rule} ×${n}</span>`).join('')}</div>` +
       `</div>`;
   }
