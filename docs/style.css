@@ -89,3 +89,14 @@ footer code { background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
   .ma-toggles { margin-left: 0; }
   #chart-box { height: 360px; }
 }
+
+/* 策略訊號插槽選擇列 */
+.slot-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 14px; font-size: 13px; color: #555; }
+.slot-ctrl .slot-lbl { font-weight: 600; color: #333; }
+.slot-ctrl label { display: inline-flex; align-items: center; gap: 5px; user-select: none; }
+.slot-ctrl select { font-size: 13px; padding: 3px 6px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; }
+.slot-ctrl select:focus { outline: none; border-color: #1976d2; }
+
+/* 葛蘭碧八大法則：法則分佈標籤（其餘樣式複用 .rebal 既有定義） */
+.gran-rules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; border-top: 1px dashed #eee; padding-top: 8px; }
+.gran-tag { font-size: 11px; padding: 2px 8px; border-radius: 3px; background: #f0f4ff; color: #1976d2; border: 1px solid #d0dff8; }

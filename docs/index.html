@@ -35,12 +35,32 @@
     <span id="grip" title="拖曳調整圖表大小（置中縮放）"></span>
   </div>
   <div id="years" class="years"></div>
+  <div class="slot-ctrl">
+    <span class="slot-lbl">圖表訊號：</span>
+    <label>K線上方（▼）<select id="slot-top"></select></label>
+    <label>K線下方（▲）<select id="slot-bot"></select></label>
+  </div>
   <div class="rebal-ctrl">
     <label><input type="checkbox" id="lock-range"> 固定回測區間（勾選後不受縮放圖表影響）</label>
     <label>起 <input type="date" id="rb-start" disabled></label>
     <label>迄 <input type="date" id="rb-end" disabled></label>
   </div>
   <div id="rebal" class="rebal"></div>
+  <div class="rebal-ctrl">
+    <label>葛蘭碧 MA
+      <select id="gran-ma">
+        <option value="ma5">MA5</option>
+        <option value="ma20" selected>MA20</option>
+        <option value="ma60">MA60</option>
+        <option value="ma120">MA120</option>
+        <option value="ma240">MA240</option>
+      </select>
+    </label>
+    <label>容忍天數 <input type="number" id="gran-tol" value="5" min="1" max="10" style="width:46px"></label>
+    <label>負乖離 ≤ <input type="number" id="gran-dev-lo" value="-15" step="0.5" style="width:52px">%</label>
+    <label>正乖離 ≥ <input type="number" id="gran-dev-hi" value="15" step="0.5" style="width:52px">%</label>
+  </div>
+  <div id="gran" class="rebal"></div>
   <p class="hint">紅漲綠跌（台股慣例）　·　拖曳平移看歷史、滾輪縮放、雙擊看全部　·　拖右下角調整大小（置中縮放）　·　下方長條為成交量</p>
 </main>
 
