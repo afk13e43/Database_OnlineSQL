@@ -294,6 +294,168 @@ function updateRebal() {
   showDay(rebalEnd, true);   // 預設顯示期末；滑鼠移到某天會改成「到那天為止」的數字
 }
 
+// ── 0050 風控波段策略（移植 stock_0050_backtest.py）──
+// 大盤濾網(0050 收盤 > MA60 才進場) × 5% 風險倉位(每股風險 2·ATR) × +2R 減半獲利 + 2.5·ATR 移動停損
+// 含交易手續費(買賣各收 0.1425%) + 證交稅(賣出 0.3%)，與 50/50、葛蘭碧共用 FEE_RATE/TAX_RATE/INIT_CASH 同基準
+const ATR_PERIOD = 14, RISK_PCT = 0.05;
+
+// 平均真實波幅 ATR(14)：TR = max(高-低, |高-昨收|, |低-昨收|)，再取 14 日均值（對應 .py 的 rolling(14).mean()）
+function computeATR(rows, period = ATR_PERIOD) {
+  const n = rows.length, tr = new Array(n).fill(null), atr = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    const h = rows[i].high, l = rows[i].low;
+    if (h == null || l == null) continue;
+    if (i === 0) { tr[i] = h - l; continue; }   // 首日無昨收 → 僅 高-低（同 pandas concat max 忽略 NaN）
+    const pc = rows[i - 1].close;
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+  }
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += tr[i] || 0;
+    if (i >= period) sum -= tr[i - period] || 0;
+    if (i >= period - 1) atr[i] = sum / period;   // 不足 14 天 → null
+  }
+  return atr;
+}
+
+// ATR 跟 rows 走（與可視範圍無關）→ 換股票才重算，scroll/縮放沿用快取
+let _atrRowsRef = null, _atrArr = null;
+function atrCached() {
+  if (_atrRowsRef === rows && _atrArr) return _atrArr;
+  _atrArr = computeATR(rows); _atrRowsRef = rows;
+  return _atrArr;
+}
+
+// 大盤濾網：以 0050 當日「收盤 > MA60」視為多頭（移植 .py 的 build_market_regime_filter）。
+// 非同步載入一次後快取；未就緒前 update05 視為不過濾（同 .py 找不到日期時 default True）。
+let _market0050 = null;   // Map<dateStr, boolean>
+function loadMarketFilter() {
+  fetch(`data/0050.json?v=${Date.now()}`).then(r => r.json()).then(data => {
+    const m = new Map();
+    for (const r of data.rows) m.set(r.time, r.ma60 != null ? r.close > r.ma60 : false);
+    _market0050 = m;
+    update05();                                 // 濾網就緒後重算一次，補上進場過濾
+  }).catch(() => { _market0050 = new Map(); });
+}
+
+// 回測模擬：逐日跑「大盤濾網 × 5%風險 × 2R 分批 × ATR 移動停損」；含手續費(買賣)+證交稅(賣)
+function simulate0050(slice, atrSlice, market) {
+  if (!slice || slice.length < 2) return null;
+  const INIT = INIT_CASH;
+  let cash = INIT, shares = 0, inPos = false;
+  let entry = 0, stopLoss = 0, target2R = 0, highest = 0, scaledHalf = false;
+  let fee = 0, tax = 0, buyCount = 0, sellCount = 0, totalTrades = 0, winTrades = 0;
+  const trades = [], equity = [];
+  for (let i = 1; i < slice.length; i++) {
+    const row = slice[i], prev = slice[i - 1];
+    const close = row.close, high = row.high, time = row.time;
+    const ma20 = row.ma20, ma60 = row.ma60, atr = atrSlice[i];
+    if (ma20 == null || ma60 == null || atr == null) continue;   // 暖機不足 → 跳過（不計入資產曲線，同 .py continue）
+    const isBull = market ? (market.get(time) !== false) : true;  // 濾網未就緒或查無當日 → 預設多頭
+
+    if (!inPos) {
+      // 進場：昨收 ≤ 昨 MA20 且 今收 > 今 MA20（向上突破），且大盤多頭
+      const breakout = prev.ma20 != null && prev.close <= prev.ma20 && close > ma20;
+      if (isBull && breakout) {
+        const riskPerShare = 2 * atr;                              // 每股風險 = 2·ATR
+        if (riskPerShare <= 0) continue;
+        let qty = Math.floor((cash * RISK_PCT) / riskPerShare);    // 5% 風險倉位反推股數
+        while (qty * close * (1 + FEE_RATE) > cash) qty -= 100;    // 現金不足則逐步減 100 股
+        if (qty > 0) {
+          const cost = qty * close, f = cost * FEE_RATE;
+          cash -= cost + f; fee += f; shares = qty;
+          entry = close; highest = close;
+          stopLoss = entry - riskPerShare;                         // 初始停損 = 進場 − 2·ATR
+          target2R = entry + 2 * riskPerShare;                     // 獲利目標 = 進場 + 2R
+          scaledHalf = false; inPos = true;
+          trades.push({ time, type: 'buy' }); buyCount++;
+        }
+      }
+    } else {
+      if (close > highest) highest = close;
+      if (high >= target2R && !scaledHalf) {                       // 觸及 +2R → 減倉一半、停損上移到成本
+        const sell = Math.floor(shares / 2);
+        if (sell > 0) {
+          const rev = sell * close, f = rev * FEE_RATE, t = rev * TAX_RATE;
+          cash += rev - f - t; fee += f; tax += t;
+          shares -= sell; scaledHalf = true; stopLoss = entry;
+          trades.push({ time, type: 'sell' }); sellCount++;
+        }
+      }
+      const stop = Math.max(stopLoss, highest - 2.5 * atr);        // 移動停損 = max(固定停損, 波段高點 − 2.5·ATR)
+      if (close < stop) {                                          // 跌破 → 全數出場
+        const rev = shares * close, f = rev * FEE_RATE, t = rev * TAX_RATE;
+        cash += rev - f - t; fee += f; tax += t;
+        const net = rev - shares * entry - shares * entry * FEE_RATE - f - t;
+        trades.push({ time, type: 'sell' }); sellCount++;
+        totalTrades++; if (net > 0) winTrades++;
+        shares = 0; inPos = false;
+      }
+    }
+    equity.push(cash + shares * close);                            // 每日收盤後的總資產淨值（算 MDD 用）
+  }
+  if (inPos) {                                                     // 期末強制平倉
+    const finClose = slice[slice.length - 1].close;
+    const rev = shares * finClose, f = rev * FEE_RATE, t = rev * TAX_RATE;
+    cash += rev - f - t; fee += f; tax += t;
+    const net = rev - shares * entry - shares * entry * FEE_RATE - f - t;
+    trades.push({ time: slice[slice.length - 1].time, type: 'sell' }); sellCount++;
+    totalTrades++; if (net > 0) winTrades++;
+    if (equity.length) equity[equity.length - 1] = cash;          // 最後一天淨值更新為平倉後現金
+    shares = 0; inPos = false;
+  }
+  let peak = -Infinity, maxDD = 0;
+  for (const e of equity) { if (e > peak) peak = e; if (peak > 0 && (e - peak) / peak < maxDD) maxDD = (e - peak) / peak; }
+  return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
+           fin: cash, ret: (cash - INIT) / INIT * 100, maxDD: maxDD * 100,
+           fee, tax, cost: fee + tax, trades, buyCount, sellCount,
+           totalTrades, winRate: totalTrades > 0 ? winTrades / totalTrades * 100 : 0 };
+}
+
+const bt05El = document.getElementById('bt05');
+
+function update05() {
+  if (!bt05El || !rows.length) return;
+  let from, to;
+  if (lockCb && lockCb.checked && startEl.value && endEl.value) {
+    from = findStartIdx(startEl.value); to = findEndIdx(endEl.value);
+    if (from > to) [from, to] = [to, from];
+  } else {
+    const vr = chart.timeScale().getVisibleLogicalRange();
+    if (!vr) return;
+    from = Math.max(0, Math.ceil(vr.from));
+    to = Math.min(rows.length - 1, Math.floor(vr.to));
+  }
+  if (to - from < 1) {
+    setStrategyTrades('bt05', []);
+    bt05El.innerHTML = '<div class="rb-hd">0050 風控波段策略</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
+    return;
+  }
+  const atrFull = atrCached();
+  const r = simulate0050(rows.slice(from, to + 1), atrFull.slice(from, to + 1), _market0050);
+  if (!r) {
+    setStrategyTrades('bt05', []);
+    bt05El.innerHTML = '<div class="rb-hd">0050 風控波段策略</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
+    return;
+  }
+  setStrategyTrades('bt05', r.trades);
+  const mk = _market0050 ? '0050 收盤 &gt; MA60' : '尚未載入·暫不過濾';
+  bt05El.innerHTML =
+    `<div class="rb-main">` +
+      `<div class="rb-hd">0050 風控波段策略（${curName}）· 交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 大盤濾網：${mk} 才進場</div>` +
+      `<div class="rb-grid">` +
+        `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
+        `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">交易次數</span><b>${r.totalTrades}</b></div>` +
+        `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
+      `</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　5% 風險倉位、2·ATR 停損、+2R 減半、2.5·ATR 移動停損</div>` +
+    `</div>`;
+}
+
 // 鎖定時把可視範圍夾在 [起,迄] 之間：拖出去就拉回來（保持寬度），裡面仍可縮放看細節
 function clampToLock(vr) {
   if (!vr || !rows.length || !startEl.value || !endEl.value) return;
@@ -311,6 +473,7 @@ function clampToLock(vr) {
 chart.timeScale().subscribeVisibleLogicalRangeChange((vr) => {
   if (lockCb && lockCb.checked) { clampToLock(vr); return; }   // 鎖定：只夾範圍、不重算回測
   updateRebal();
+  update05();
   updateGranville();
 });
 
@@ -329,6 +492,7 @@ if (lockCb) {
       }
     }
     updateRebal();
+    update05();
     updateGranville();
   });
   // 鎖定狀態下手動改日期 → 同步把上方圖表縮放到該日期範圍（updateRebal 也跟著重算）
@@ -338,6 +502,7 @@ if (lockCb) {
     if (f > t) [f, t] = [t, f];
     chart.timeScale().setVisibleLogicalRange({ from: f, to: t });   // 精準對齊所選起迄，不多留前一天
     updateRebal();
+    update05();
     updateGranville();
   }
   startEl.addEventListener('change', syncChartToDates);
@@ -763,6 +928,7 @@ async function loadStock(code, name) {
   buildYears();                    // 建立年份快捷列（只建一次）
   setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
   updateRebal();                   // 依目前可視範圍重算 50/50 再平衡
+  update05();                      // 依目前可視範圍重算 0050 風控波段策略
   updateGranville();               // 依目前可視範圍重算葛蘭碧策略
   resetGranOpt();                  // 最佳參數搜尋：切股票清空、等按鈕觸發（不被動更新）
 }
@@ -789,6 +955,7 @@ if (granOptBtn) granOptBtn.addEventListener('click', runGranvilleOpt);
 // 初始化策略插槽下拉選單（未來新增策略只需呼叫 registerStrategy 即可自動出現在選單中）
 (function initStrategySlots() {
   registerStrategy('rebal',  '50/50 再平衡');
+  registerStrategy('bt05',    '0050 風控波段');
   registerStrategy('gran',    '葛蘭碧八大法則');
   registerStrategy('granopt', '葛蘭碧最佳參數');   // 按「計算最佳參數」後才有買賣點
   ['slot-top', 'slot-bot'].forEach((elId, slot) => {
@@ -810,6 +977,7 @@ if (granOptBtn) granOptBtn.addEventListener('click', runGranvilleOpt);
 })();
 
 (async function init() {
+  loadMarketFilter();   // 先非同步載入 0050 大盤濾網（就緒後自動重算 0050 風控波段策略）
   const idx = await (await fetch(`data/index.json?v=${Date.now()}`)).json();
   document.getElementById('updated').textContent =
     `資料日期 ${idx.stocks[0] ? idx.stocks[0].last_date : '—'}（每週一~五自動更新）`;
