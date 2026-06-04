@@ -13,6 +13,7 @@ Database_OnlineSQL — 每日抓台股日線寫進 Azure SQL（小組共用資�
 """
 
 import os
+import time
 import datetime as dt
 import pymssql
 import pandas as pd
@@ -44,6 +45,14 @@ MA_WINDOWS = [5, 10, 20, 60, 120, 240]
 BACKFILL = os.environ.get('BACKFILL', '').lower() in ('1', 'true', 'yes')
 WRITE_TAIL_DAYS = int(os.environ.get('WRITE_TAIL_DAYS', '30'))
 
+# DB 連線重試：Azure SQL Serverless 閒置會暫停，第一次連常吃 40613「資料庫尚未就緒」需等喚醒
+DB_CONNECT_RETRIES = int(os.environ.get('DB_CONNECT_RETRIES', '6'))
+DB_CONNECT_BACKOFF = int(os.environ.get('DB_CONNECT_BACKOFF', '15'))   # 每次重試前等待秒數（會逐次遞增）
+# 視為「暫時性、值得重試」的錯誤特徵（含 Serverless 喚醒中、限流、連線逾時）
+_TRANSIENT_HINTS = ('40613', '40197', '40501', '49918', '49919', '49920', '11001',
+                    'not currently available', 'Adaptive Server connection failed',
+                    'Login timeout', 'timed out', 'Server is busy')
+
 
 # ──────────────────────────── 工具 ────────────────────────────
 def _ticker(code):
@@ -51,12 +60,29 @@ def _ticker(code):
     return '^TWII' if code == 'TWII' else f'{code}.TW'
 
 
+def db_connect():
+    """連 Azure SQL；遇 Serverless 冷啟動(40613)等暫時性錯誤就退避重試，等資料庫喚醒。"""
+    last = None
+    for attempt in range(1, DB_CONNECT_RETRIES + 1):
+        try:
+            return pymssql.connect(**DB)
+        except Exception as e:                     # pymssql.OperationalError 等
+            last = e
+            transient = any(h in str(e) for h in _TRANSIENT_HINTS)
+            if attempt == DB_CONNECT_RETRIES or not transient:
+                raise
+            wait = DB_CONNECT_BACKOFF * attempt    # 15s, 30s, 45s… 給 Serverless 時間恢復
+            print(f"  DB 連線第 {attempt}/{DB_CONNECT_RETRIES} 次失敗，{wait}s 後重試…（{str(e)[:90]}）")
+            time.sleep(wait)
+    raise last                                     # 理論上不會走到，保險用
+
+
 def init_schema():
     """建立 dbo.StockTrading_Live（若不存在）。schema_live.sql 不含 USE，相容 Azure SQL。"""
     sql_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema_live.sql')
     with open(sql_path, encoding='utf-8') as f:
         batches = [b for b in f.read().split('\nGO') if b.strip()]
-    conn = pymssql.connect(**DB); conn.autocommit(True); cur = conn.cursor()
+    conn = db_connect(); conn.autocommit(True); cur = conn.cursor()
     for b in batches:
         cur.execute(b)
     conn.close()
@@ -102,7 +128,7 @@ def upsert(df):
             cell(r['MA60']), cell(r['MA120']), cell(r['MA240']),
         ))
 
-    conn = pymssql.connect(**DB); conn.autocommit(False); cur = conn.cursor()
+    conn = db_connect(); conn.autocommit(False); cur = conn.cursor()
     cur.execute("DELETE FROM dbo.StockTrading_Live WHERE StockCode=%s AND [date] BETWEEN %s AND %s",
                 (code, str(dmin), str(dmax)))
     cur.executemany(
