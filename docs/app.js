@@ -605,7 +605,7 @@ function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
   return { ret: (fin - INIT_CASH) / INIT_CASH, maxDD: maxDD * 100, fin, fee, tax };
 }
 
-// 對「目前區間」暴力搜尋全部參數組合，回傳依報酬由高到低排序的結果
+// 對「目前區間」逐一試算全部參數組合，回傳依報酬由高到低排序的結果
 function optimizeGranville(slice) {
   const closes = slice.map(r => r.close);
   const maWindows = [20, 60], devLows = [-5, -10, -15, -20], devHighs = [5, 10, 15, 20];
