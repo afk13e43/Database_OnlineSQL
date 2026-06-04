@@ -565,7 +565,8 @@ function updateGranville() {
 
 // ── 葛蘭碧最佳參數搜尋（訊號移植 find_parameter02.py，按鈕觸發、不隨縮放被動更新）──
 // 全進全出：法則1/2/4 買、5/8 賣；MA 在「目前區間」內滾動計算；含交易手續費(買賣)+證交稅(賣)
-function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
+function runGranvilleOptBacktest(slice, maWindow, devLow, devHigh) {
+  const closes = slice.map(r => r.close);
   const n = closes.length;
   const MA = new Array(n).fill(null);
   let sum = 0;
@@ -575,6 +576,7 @@ function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
     if (i >= maWindow - 1) MA[i] = sum / maWindow;        // 不足 maWindow 天 → null（對應 pandas NaN）
   }
   let cash = INIT_CASH, shares = 0, fee = 0, tax = 0, peak = -Infinity, maxDD = 0;
+  const trades = [];                                      // 記錄買/賣點（供圖表標記用）
   for (let i = 0; i < n; i++) {
     const price = closes[i];
     const ma = MA[i], pma = i > 0 ? MA[i - 1] : null;
@@ -592,28 +594,29 @@ function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
     if (sell) target = 0;                                  // 賣出優先（對應 .py 先設買=1 再設賣=0）
     if (target === 1 && shares === 0) {                    // 空手 → 全進（預留手續費）
       const q = Math.floor(cash / (price * (1 + FEE_RATE)));
-      if (q > 0) { const cost = q * price, f = cost * FEE_RATE; cash -= cost + f; shares = q; fee += f; }
+      if (q > 0) { const cost = q * price, f = cost * FEE_RATE; cash -= cost + f; shares = q; fee += f;
+        trades.push({ time: slice[i].time, type: 'buy' }); }
     } else if (target === 0 && shares > 0) {               // 持有 → 全出（手續費 + 證交稅）
       const proceeds = shares * price, f = proceeds * FEE_RATE, t = proceeds * TAX_RATE;
       cash += proceeds - f - t; fee += f; tax += t; shares = 0;
+      trades.push({ time: slice[i].time, type: 'sell' });
     }
     const eq = cash + shares * price;
     if (eq > peak) peak = eq;
     if (peak > 0 && (eq - peak) / peak < maxDD) maxDD = (eq - peak) / peak;
   }
   const fin = cash + shares * closes[n - 1];
-  return { ret: (fin - INIT_CASH) / INIT_CASH, maxDD: maxDD * 100, fin, fee, tax };
+  return { ret: (fin - INIT_CASH) / INIT_CASH, maxDD: maxDD * 100, fin, fee, tax, trades };
 }
 
 // 對「目前區間」逐一試算全部參數組合，回傳依報酬由高到低排序的結果
 function optimizeGranville(slice) {
-  const closes = slice.map(r => r.close);
   const maWindows = [20, 60], devLows = [-5, -10, -15, -20], devHighs = [5, 10, 15, 20];
   const results = [];
   for (const ma of maWindows)
     for (const dl of devLows)
       for (const dh of devHighs)
-        results.push({ ma, devLow: dl, devHigh: dh, ...runGranvilleOptBacktest(closes, ma, dl, dh) });
+        results.push({ ma, devLow: dl, devHigh: dh, ...runGranvilleOptBacktest(slice, ma, dl, dh) });
   results.sort((a, b) => b.ret - a.ret);
   return results;
 }
@@ -623,6 +626,7 @@ const granOptEl = document.getElementById('gran-opt');
 function resetGranOpt() {           // 切股票時清空（避免顯示上一檔的結果）；不自動重算
   if (granOptEl) granOptEl.innerHTML =
     '<div class="rb-hd">葛蘭碧最佳參數搜尋</div><div class="rb-note">按上方按鈕，計算「目前圖表範圍」報酬最高的參數組合</div>';
+  setStrategyTrades('granopt', []);   // 清掉舊的最佳組合買賣點標記
 }
 
 function runGranvilleOpt() {        // 按鈕觸發
@@ -639,11 +643,13 @@ function runGranvilleOpt() {        // 按鈕觸發
   }
   const slice = rows.slice(from, to + 1);
   if (slice.length < 2) {
+    setStrategyTrades('granopt', []);
     granOptEl.innerHTML = '<div class="rb-hd">葛蘭碧最佳參數搜尋</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
     return;
   }
   const results = optimizeGranville(slice);
   const best = results[0];
+  setStrategyTrades('granopt', best.trades);   // 把最佳組合的買賣點餵給圖表（選到插槽才會顯示）
   const fmtPct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
   granOptEl.innerHTML =
     `<div class="rb-main">` +
@@ -782,8 +788,9 @@ if (granOptBtn) granOptBtn.addEventListener('click', runGranvilleOpt);
 
 // 初始化策略插槽下拉選單（未來新增策略只需呼叫 registerStrategy 即可自動出現在選單中）
 (function initStrategySlots() {
-  registerStrategy('rebal', '50/50 再平衡');
-  registerStrategy('gran',  '葛蘭碧八大法則');
+  registerStrategy('rebal',  '50/50 再平衡');
+  registerStrategy('gran',    '葛蘭碧八大法則');
+  registerStrategy('granopt', '葛蘭碧最佳參數');   // 按「計算最佳參數」後才有買賣點
   ['slot-top', 'slot-bot'].forEach((elId, slot) => {
     const sel = document.getElementById(elId);
     if (!sel) return;
