@@ -138,7 +138,7 @@ function focusYear(y, btn) {
     if (+rows[i].time.slice(0, 4) === y) { if (from < 0) from = i; to = i; }
   }
   if (from < 0) return;                       // 該年無資料
-  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, from - 1), to: to + 1 });
+  chart.timeScale().setVisibleLogicalRange({ from, to });   // 精準對齊該年首尾交易日，不多留前後一天
   setActiveYearBtn(btn);
 }
 
