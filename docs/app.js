@@ -563,6 +563,95 @@ function updateGranville() {
   }
 }
 
+// ── 葛蘭碧最佳參數搜尋（移植 find_parameter02.py，按鈕觸發、不隨縮放被動更新）──
+// 全進全出簡化版：法則1/2/4 買、5/8 賣；部位 ffill；MA 在「目前區間」內滾動計算（與 .py 一致）
+function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
+  const n = closes.length;
+  const MA = new Array(n).fill(null);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += closes[i];
+    if (i >= maWindow) sum -= closes[i - maWindow];
+    if (i >= maWindow - 1) MA[i] = sum / maWindow;        // 不足 maWindow 天 → null（對應 pandas NaN）
+  }
+  let prod = 1, position = 0;                              // position 持有=1 / 空手=0（ffill）
+  for (let i = 0; i < n; i++) {
+    if (i > 0 && closes[i - 1] !== 0)                      // Position.shift(1) * Daily_Return
+      prod *= 1 + position * (closes[i] - closes[i - 1]) / closes[i - 1];
+    const ma = MA[i], pma = i > 0 ? MA[i - 1] : null;
+    const trend = (ma != null && pma != null && ma > pma) ? 1 : -1;
+    const ptrend = i > 0 ? ((MA[i - 1] != null && MA[i - 2] != null && MA[i - 1] > MA[i - 2]) ? 1 : -1) : 0;
+    const dev = (ma != null && ma !== 0) ? (closes[i] - ma) / ma * 100 : null;
+    const aboveMA = ma != null && closes[i] > ma, belowMA = ma != null && closes[i] < ma;
+    const buy  = (trend === 1 && ptrend === -1 && aboveMA) ||                       // 法則1
+                 (trend === 1 && pma != null && closes[i - 1] < pma && aboveMA) ||  // 法則2
+                 (trend === -1 && dev != null && dev <= devLow);                    // 法則4
+    const sell = (trend === -1 && ptrend === 1 && belowMA) ||                       // 法則5
+                 (trend === 1 && dev != null && dev >= devHigh);                    // 法則8
+    if (buy) position = 1;
+    if (sell) position = 0;                                // 賣出優先（對應 .py 先設買=1 再設賣=0）
+  }
+  return prod - 1;                                         // 區間總報酬率（小數）
+}
+
+// 對「目前區間」暴力搜尋全部參數組合，回傳依報酬由高到低排序的結果
+function optimizeGranville(slice) {
+  const closes = slice.map(r => r.close);
+  const maWindows = [20, 60], devLows = [-5, -10, -15, -20], devHighs = [5, 10, 15, 20];
+  const results = [];
+  for (const ma of maWindows)
+    for (const dl of devLows)
+      for (const dh of devHighs)
+        results.push({ ma, devLow: dl, devHigh: dh, ret: runGranvilleOptBacktest(closes, ma, dl, dh) });
+  results.sort((a, b) => b.ret - a.ret);
+  return results;
+}
+
+const granOptEl = document.getElementById('gran-opt');
+
+function resetGranOpt() {           // 切股票時清空（避免顯示上一檔的結果）；不自動重算
+  if (granOptEl) granOptEl.innerHTML =
+    '<div class="rb-hd">葛蘭碧最佳參數搜尋</div><div class="rb-note">按上方按鈕，計算「目前圖表範圍」報酬最高的參數組合</div>';
+}
+
+function runGranvilleOpt() {        // 按鈕觸發
+  if (!granOptEl || !rows.length) return;
+  let from, to;
+  if (lockCb && lockCb.checked && startEl.value && endEl.value) {
+    from = findStartIdx(startEl.value); to = findEndIdx(endEl.value);
+    if (from > to) [from, to] = [to, from];
+  } else {
+    const vr = chart.timeScale().getVisibleLogicalRange();
+    if (!vr) return;
+    from = Math.max(0, Math.ceil(vr.from));
+    to   = Math.min(rows.length - 1, Math.floor(vr.to));
+  }
+  const slice = rows.slice(from, to + 1);
+  if (slice.length < 2) {
+    granOptEl.innerHTML = '<div class="rb-hd">葛蘭碧最佳參數搜尋</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
+    return;
+  }
+  const results = optimizeGranville(slice);
+  const best = results[0];
+  const finAssets = INIT_CASH * (1 + best.ret);
+  const fmtPct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
+  granOptEl.innerHTML =
+    `<div class="rb-main">` +
+      `<div class="rb-hd">🏆 葛蘭碧最佳參數搜尋（${curName}）· 全進全出、未計費用（同 find_parameter02.py）</div>` +
+      `<div class="rb-sub">期間 ${slice[0].time} ~ ${slice[slice.length - 1].time}（${slice.length} 個交易日）· 初始金額 ${money(INIT_CASH)} · 共試 ${results.length} 組</div>` +
+      `<div class="rb-grid">` +
+        `<div><span class="rb-lbl">最佳均線</span><b>MA${best.ma}</b></div>` +
+        `<div><span class="rb-lbl">負乖離買</span><b>${best.devLow}%</b></div>` +
+        `<div><span class="rb-lbl">正乖離賣</span><b>+${best.devHigh}%</b></div>` +
+        `<div><span class="rb-lbl">區間總報酬</span><b class="${best.ret >= 0 ? 'up' : 'down'}">${fmtPct(best.ret)}</b></div>` +
+        `<div><span class="rb-lbl">最終總資產</span><b>${money(finAssets)}</b></div>` +
+      `</div>` +
+      `<div class="gran-rules">` +
+        results.map((x, i) => `<span class="gran-tag${i === 0 ? ' best' : ''}">MA${x.ma} ${x.devLow}/+${x.devHigh} ⇒ ${fmtPct(x.ret)}</span>`).join('') +
+      `</div>` +
+    `</div>`;
+}
+
 // 自訂買賣箭頭（lightweight-charts primitive）：內建 marker 的 size 會連寬一起放大，
 // 改用 primitive 自畫一個「原本大小、指向當天 K 線」的精簡箭頭三角，並可調離 K 線的高度。
 const ARROW_HW = 5;      // 箭頭半寬(px)
@@ -660,6 +749,7 @@ async function loadStock(code, name) {
   setActiveYearBtn(null);          // 切股票回到近 120 天，清除年份高亮
   updateRebal();                   // 依目前可視範圍重算 50/50 再平衡
   updateGranville();               // 依目前可視範圍重算葛蘭碧策略
+  resetGranOpt();                  // 最佳參數搜尋：切股票清空、等按鈕觸發（不被動更新）
 }
 
 document.querySelectorAll('.ma-toggles input[data-ma]').forEach(cb => {
@@ -677,6 +767,9 @@ volCb.addEventListener('change', () => vol.applyOptions({ visible: volCb.checked
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', updateGranville);
 });
+
+const granOptBtn = document.getElementById('gran-opt-run');
+if (granOptBtn) granOptBtn.addEventListener('click', runGranvilleOpt);
 
 // 初始化策略插槽下拉選單（未來新增策略只需呼叫 registerStrategy 即可自動出現在選單中）
 (function initStrategySlots() {

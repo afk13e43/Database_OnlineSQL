@@ -61,6 +61,11 @@
     <label>正乖離 ≥ <input type="number" id="gran-dev-hi" value="15" step="0.5" style="width:52px">%</label>
   </div>
   <div id="gran" class="rebal"></div>
+  <div class="rebal-ctrl">
+    <button id="gran-opt-run" class="btn-run">🔍 計算最佳參數（目前範圍）</button>
+    <span class="opt-hint">暴力搜尋 MA20/60 × 負乖離 × 正乖離（32 組），找出區間報酬最高的組合</span>
+  </div>
+  <div id="gran-opt" class="rebal"></div>
   <p class="hint">紅漲綠跌（台股慣例）　·　拖曳平移看歷史、滾輪縮放、雙擊看全部　·　拖右下角調整大小（置中縮放）　·　下方長條為成交量</p>
 </main>
 

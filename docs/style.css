@@ -100,3 +100,11 @@ footer code { background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
 /* 葛蘭碧八大法則：法則分佈標籤（其餘樣式複用 .rebal 既有定義） */
 .gran-rules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; border-top: 1px dashed #eee; padding-top: 8px; }
 .gran-tag { font-size: 11px; padding: 2px 8px; border-radius: 3px; background: #f0f4ff; color: #1976d2; border: 1px solid #d0dff8; }
+.gran-tag.best { background: #fff3d6; color: #b26a00; border-color: #f0d089; font-weight: 600; }
+
+/* 最佳參數搜尋：觸發按鈕 */
+.btn-run { font-size: 13px; padding: 6px 14px; cursor: pointer; color: #fff; background: #1976d2;
+  border: 1px solid #1565c0; border-radius: 5px; }
+.btn-run:hover { background: #1565c0; }
+.btn-run:active { transform: translateY(1px); }
+.opt-hint { font-size: 12px; color: #999; }
