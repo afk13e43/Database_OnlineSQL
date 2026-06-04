@@ -563,8 +563,8 @@ function updateGranville() {
   }
 }
 
-// ── 葛蘭碧最佳參數搜尋（移植 find_parameter02.py，按鈕觸發、不隨縮放被動更新）──
-// 全進全出簡化版：法則1/2/4 買、5/8 賣；部位 ffill；MA 在「目前區間」內滾動計算（與 .py 一致）
+// ── 葛蘭碧最佳參數搜尋（訊號移植 find_parameter02.py，按鈕觸發、不隨縮放被動更新）──
+// 全進全出：法則1/2/4 買、5/8 賣；MA 在「目前區間」內滾動計算；含交易手續費(買賣)+證交稅(賣)
 function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
   const n = closes.length;
   const MA = new Array(n).fill(null);
@@ -574,24 +574,35 @@ function runGranvilleOptBacktest(closes, maWindow, devLow, devHigh) {
     if (i >= maWindow) sum -= closes[i - maWindow];
     if (i >= maWindow - 1) MA[i] = sum / maWindow;        // 不足 maWindow 天 → null（對應 pandas NaN）
   }
-  let prod = 1, position = 0;                              // position 持有=1 / 空手=0（ffill）
+  let cash = INIT_CASH, shares = 0, fee = 0, tax = 0, peak = -Infinity, maxDD = 0;
   for (let i = 0; i < n; i++) {
-    if (i > 0 && closes[i - 1] !== 0)                      // Position.shift(1) * Daily_Return
-      prod *= 1 + position * (closes[i] - closes[i - 1]) / closes[i - 1];
+    const price = closes[i];
     const ma = MA[i], pma = i > 0 ? MA[i - 1] : null;
     const trend = (ma != null && pma != null && ma > pma) ? 1 : -1;
     const ptrend = i > 0 ? ((MA[i - 1] != null && MA[i - 2] != null && MA[i - 1] > MA[i - 2]) ? 1 : -1) : 0;
-    const dev = (ma != null && ma !== 0) ? (closes[i] - ma) / ma * 100 : null;
-    const aboveMA = ma != null && closes[i] > ma, belowMA = ma != null && closes[i] < ma;
+    const dev = (ma != null && ma !== 0) ? (price - ma) / ma * 100 : null;
+    const aboveMA = ma != null && price > ma, belowMA = ma != null && price < ma;
     const buy  = (trend === 1 && ptrend === -1 && aboveMA) ||                       // 法則1
                  (trend === 1 && pma != null && closes[i - 1] < pma && aboveMA) ||  // 法則2
                  (trend === -1 && dev != null && dev <= devLow);                    // 法則4
     const sell = (trend === -1 && ptrend === 1 && belowMA) ||                       // 法則5
                  (trend === 1 && dev != null && dev >= devHigh);                    // 法則8
-    if (buy) position = 1;
-    if (sell) position = 0;                                // 賣出優先（對應 .py 先設買=1 再設賣=0）
+    let target = null;                                     // 目標部位（ffill 語意）
+    if (buy) target = 1;
+    if (sell) target = 0;                                  // 賣出優先（對應 .py 先設買=1 再設賣=0）
+    if (target === 1 && shares === 0) {                    // 空手 → 全進（預留手續費）
+      const q = Math.floor(cash / (price * (1 + FEE_RATE)));
+      if (q > 0) { const cost = q * price, f = cost * FEE_RATE; cash -= cost + f; shares = q; fee += f; }
+    } else if (target === 0 && shares > 0) {               // 持有 → 全出（手續費 + 證交稅）
+      const proceeds = shares * price, f = proceeds * FEE_RATE, t = proceeds * TAX_RATE;
+      cash += proceeds - f - t; fee += f; tax += t; shares = 0;
+    }
+    const eq = cash + shares * price;
+    if (eq > peak) peak = eq;
+    if (peak > 0 && (eq - peak) / peak < maxDD) maxDD = (eq - peak) / peak;
   }
-  return prod - 1;                                         // 區間總報酬率（小數）
+  const fin = cash + shares * closes[n - 1];
+  return { ret: (fin - INIT_CASH) / INIT_CASH, maxDD: maxDD * 100, fin, fee, tax };
 }
 
 // 對「目前區間」暴力搜尋全部參數組合，回傳依報酬由高到低排序的結果
@@ -602,7 +613,7 @@ function optimizeGranville(slice) {
   for (const ma of maWindows)
     for (const dl of devLows)
       for (const dh of devHighs)
-        results.push({ ma, devLow: dl, devHigh: dh, ret: runGranvilleOptBacktest(closes, ma, dl, dh) });
+        results.push({ ma, devLow: dl, devHigh: dh, ...runGranvilleOptBacktest(closes, ma, dl, dh) });
   results.sort((a, b) => b.ret - a.ret);
   return results;
 }
@@ -633,22 +644,20 @@ function runGranvilleOpt() {        // 按鈕觸發
   }
   const results = optimizeGranville(slice);
   const best = results[0];
-  const finAssets = INIT_CASH * (1 + best.ret);
   const fmtPct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
   granOptEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd">🏆 葛蘭碧最佳參數搜尋（${curName}）· 全進全出、未計費用（同 find_parameter02.py）</div>` +
+      `<div class="rb-hd">葛蘭碧最佳參數搜尋（${curName}）· 全進全出</div>` +
       `<div class="rb-sub">期間 ${slice[0].time} ~ ${slice[slice.length - 1].time}（${slice.length} 個交易日）· 初始金額 ${money(INIT_CASH)} · 共試 ${results.length} 組</div>` +
       `<div class="rb-grid">` +
+        `<div><span class="rb-lbl">最終總資產</span><b>${money(best.fin)}</b></div>` +
+        `<div><span class="rb-lbl">總報酬</span><b class="${best.ret >= 0 ? 'up' : 'down'}">${fmtPct(best.ret)}</b></div>` +
+        `<div><span class="rb-lbl">最大回撤</span><b class="down">${best.maxDD.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">最佳均線</span><b>MA${best.ma}</b></div>` +
         `<div><span class="rb-lbl">負乖離買</span><b>${best.devLow}%</b></div>` +
         `<div><span class="rb-lbl">正乖離賣</span><b>+${best.devHigh}%</b></div>` +
-        `<div><span class="rb-lbl">區間總報酬</span><b class="${best.ret >= 0 ? 'up' : 'down'}">${fmtPct(best.ret)}</b></div>` +
-        `<div><span class="rb-lbl">最終總資產</span><b>${money(finAssets)}</b></div>` +
       `</div>` +
-      `<div class="gran-rules">` +
-        results.map((x, i) => `<span class="gran-tag${i === 0 ? ' best' : ''}">MA${x.ma} ${x.devLow}/+${x.devHigh} ⇒ ${fmtPct(x.ret)}</span>`).join('') +
-      `</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(best.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(best.tax)}</b>（0.3%·賣出收）　·　以收盤價、全進全出模擬</div>` +
     `</div>`;
 }
 
