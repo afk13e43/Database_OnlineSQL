@@ -12,15 +12,9 @@ build_site.py — 從 Azure SQL 讀股價，產生 GitHub Pages 用的靜態 JSO
 import os
 import json
 import datetime
-import pymssql
 
-_REQUIRED = ['DB_SERVER', 'DB_DATABASE', 'DB_USER', 'DB_PASSWORD']
-_missing = [k for k in _REQUIRED if not os.environ.get(k)]
-if _missing:
-    raise SystemExit(f"缺少環境變數：{', '.join(_missing)}")
+from db import db_connect   # 共用連線（含 Serverless 冷啟動退避重試）
 
-DB = dict(server=os.environ['DB_SERVER'], user=os.environ['DB_USER'],
-          password=os.environ['DB_PASSWORD'], database=os.environ['DB_DATABASE'])
 DAYS = int(os.environ.get('DAYS', '0'))      # 0 = 全部歷史；>0 則只取最近 N 個交易日
 
 NAMES = {'0050': '元大台灣50', '2303': '聯電', '2317': '鴻海', '2330': '台積電',
@@ -39,7 +33,7 @@ def _num(v):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    conn = pymssql.connect(**DB)
+    conn = db_connect()
     cur = conn.cursor()
     cur.execute("SELECT DISTINCT StockCode FROM dbo.StockTrading_Live")
     codes = sorted(r[0] for r in cur.fetchall())

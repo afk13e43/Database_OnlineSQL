@@ -9,7 +9,7 @@ Azure SQL，組員連同一張表跑各自策略；同時匯出 JSON 給 GitHub 
 GitHub Actions（週一~五 12:00 UTC / 台灣 20:00 cron）
   ① fetch_daily.py  → yfinance 抓日線、算 MA → upsert 進 Azure SQL
   ② build_site.py   → 從 SQL 讀回 → 寫 docs/data/*.json + index.json
-  ③ git commit/push docs/data → GitHub Pages 自動更新
+  ③ upload-pages-artifact + deploy-pages → 用 GitHub Actions 部署 Pages（不再 push 回 repo）
         ▼
 ☁️ Azure SQL: DatabasePJ.dbo.StockTrading_Live   ← 單一資料源
         ├─ 組員唯讀帳號連線跑策略
@@ -20,6 +20,7 @@ GitHub Actions（週一~五 12:00 UTC / 台灣 20:00 cron）
 
 | 檔案 | 作用 |
 |------|------|
+| `db.py` | Azure SQL 連線共用模組：讀 `DB_*` 環境變數 + `db_connect()`（對 Serverless 冷啟動 40613 等暫時性錯誤退避重試）。`fetch_daily.py` / `build_site.py` 都 import 它 |
 | `fetch_daily.py` | 抓 9 檔（0050/2303/2317/2330/2382/2412/2454/2881 + 大盤 `TWII`）日線，算 MA5~MA240，以 `(date, StockCode)` upsert。預設只寫最近 30 天；`BACKFILL=true` 回填 2015 起全史 |
 | `build_site.py` | 從 SQL 匯出 `docs/data/<code>.json` + `index.json`；Trend 文字壓成單字母 U/D/F 省體積 |
 | `schema_live.sql` | 建表 DDL，主鍵 `(date, StockCode)`。**不用 `USE`**（Azure SQL 不支援切庫） |
@@ -52,4 +53,5 @@ DB 連線一律走環境變數 `DB_SERVER` / `DB_DATABASE` / `DB_USER` / `DB_PAS
 - `docs/app.js` 是純前端、無建置步驟，直接改檔即可；改完可 `node --check app.js` 檢查語法。
 - lightweight-charts 的 `timeScale.minBarSpacing` 預設 0.5px/根，2700+ 根會塞不下而
   砍掉左邊最舊資料 → 需設小值（目前 0.04）才能「全部」完整顯示自 2015。
-- `docs/data/*.json` 由 Action 自動產生並 commit，平常不必手改。
+- **Pages 改用 GitHub Actions 部署**（Settings → Pages 來源＝GitHub Actions，非 `/docs` 分支）。CI 在 runner 內現算 `docs/data` 後直接部署，**不再 commit 回 repo** → repo 裡 commit 的 `docs/data/*.json` 只是歷史殘留、非線上資料源（要本機預覽才需自己跑 `build_site.py`）。
+- **`main` 有分支保護**：協作者改 `main` 要走 PR + 1 審核；repo 管理員（owner）不強制、仍可直接 push。CI 不直推 `main`（見上），故與保護相容。
