@@ -1,6 +1,6 @@
 name: Daily stock update
 
-# 每日抓台股日線寫進 Azure SQL，並重建 GitHub Pages 用的網頁資料（docs/data）
+# 每日抓台股日線寫進 Azure SQL，並用 GitHub Pages（Actions 部署）更新網站資料
 on:
   workflow_dispatch:                 # 可在 Actions 頁手動觸發（測試 / 全量回填）
     inputs:
@@ -11,11 +11,18 @@ on:
   schedule:
     - cron: '0 12 * * 1-5'           # 每週一~五 12:00 UTC = 台灣 20:00（收盤後、資料已穩定）
 
+# 用 Actions 部署 Pages 所需權限（不再 push 回 repo，故不需 contents: write）
 permissions:
-  contents: write                    # 需寫回 docs/data（網頁資料）
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:                         # 避免多次部署互相打架
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,10 +55,18 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: python build_site.py
 
-      - name: Commit refreshed website data
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/data
-          git diff --staged --quiet || git commit -m "chore: 更新網站股價資料 ($(date -u +%Y-%m-%d))"
-          git push
+      - name: Upload Pages artifact          # 把整個 docs/（網頁 + 剛產生的 data）打包
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
