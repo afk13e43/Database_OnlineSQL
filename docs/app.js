@@ -236,7 +236,7 @@ function showDay(c, isEnd) {
   if (!c) return;
   const g = id => document.getElementById(id);
   setPie(c.stock, c.cash);
-  const tag = (isEnd ? '期末 ' : '當日 ') + c.time;
+  const tag = (isEnd ? '截至 ' : '當日 ') + c.time;
   if (g('pieCap')) g('pieCap').textContent = tag;
   if (g('rbAsof')) g('rbAsof').textContent = tag;
   if (g('rbFinLbl')) g('rbFinLbl').textContent = isEnd ? '最終總金額' : '當日總金額';
