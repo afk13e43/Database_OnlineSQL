@@ -844,8 +844,8 @@ function updateGranville() {
   const allSigs   = granvilleSignalsCached(params);
   const sliceSet  = new Set(rows.slice(from, to + 1).map(r => r.time));
   const signals   = allSigs.filter(s => sliceSet.has(s.time));
-  setStrategyTrades('gran', signals.map(s => ({ time: s.time, type: s.type })));
   const r = simulateGranvilleBacktest(rows.slice(from, to + 1), signals);
+  setStrategyTrades('gran', r ? r.trades : []);   // 圖表只標「實際成交」的買賣點（與交易次數一致；非全部訊號）
   const maLbl = params.maKey.toUpperCase();
   if (!r) {
     granEl.innerHTML =
