@@ -280,6 +280,7 @@ function updateRebal() {
         `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
         `<div><span class="rb-lbl">報酬率</span><b id="rbRet"></b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b id="rbMDD"></b></div>` +
+        `<div><span class="rb-lbl">交易次數</span><b>${r.trades.length}</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b id="rbCost"></b></div>` +
       `</div>` +
       `<div class="rb-cost">交易手續費 <b id="rbFee"></b>（0.1425%·買賣各收）　＋　證交稅 <b id="rbTax"></b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
@@ -863,6 +864,7 @@ function updateGranville() {
           `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
           `<div><span class="rb-lbl">買入訊號</span><b>${r.buyCount}</b></div>` +
           `<div><span class="rb-lbl">賣出訊號</span><b>${r.sellCount}</b></div>` +
+          `<div><span class="rb-lbl">交易次數</span><b>${r.buyCount + r.sellCount}</b></div>` +
           `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
         `</div>` +
         `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　以收盤價模擬、現金不計息</div>` +
@@ -972,6 +974,7 @@ function runGranvilleOpt() {        // 按鈕觸發
         `<div><span class="rb-lbl">最終總資產</span><b>${money(best.fin)}</b></div>` +
         `<div><span class="rb-lbl">總報酬</span><b class="${best.ret >= 0 ? 'up' : 'down'}">${fmtPct(best.ret)}</b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b class="down">${best.maxDD.toFixed(2)}%</b></div>` +
+        `<div><span class="rb-lbl">交易次數</span><b>${best.trades.length}</b></div>` +
         `<div><span class="rb-lbl">最佳均線</span><b>MA${best.ma}</b></div>` +
         `<div><span class="rb-lbl">負乖離買</span><b>${best.devLow}%</b></div>` +
         `<div><span class="rb-lbl">正乖離賣</span><b>+${best.devHigh}%</b></div>` +
