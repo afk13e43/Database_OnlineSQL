@@ -592,7 +592,7 @@ function updateWM() {
         `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
-      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　25% 資金買進、停損＝前兩谷上升切線 與 第三谷低點−3%、三重頂跌破出場</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　25% 資金、停損＝上升切線／谷底−3%、三重頂跌破出場</div>` +
     `</div>`;
 }
 
