@@ -456,12 +456,12 @@ function update05() {
     `</div>`;
 }
 
-// ── 三重頂底反轉策略（移植 strategy/WMtest.py）──
-// ZigZag 抓近 3 個峰/谷 → 三重底向上突破頸線(斜率外推)買進、三重頂向下跌破賣出；
-// 風控同 0050：25% 風險倉位(每股風險 2·ATR)、+2R 減半、2.5·ATR 移動停損；含手續費+證交稅
+// ── 三重頂底反轉策略（移植 strategy/WMtest.py：底部埋伏切線版）──
+// 進場：ZigZag 抓三重底，第三個波谷剛確認當下「底部埋伏」買進（不等突破頸線）
+// 出場：跌破「前兩谷上升切線」或「第三谷低點 −3%」，或三重頂跌破；25% 資金、含手續費+證交稅
 function computeTriplePatternSignals(rows) {
   const n = rows.length;
-  const sig = new Array(n).fill(null);          // 每列 → null | {type:'buy'|'sell', reason}
+  const sig = new Array(n).fill(null);          // 每列 → null | {type:'buy', v1i,v1v,v2i,v2v} | {type:'sell'}
   const peaks = [], valleys = [];               // 各為 [idx, value]，僅保留最近 3 個
   for (let i = 6; i < n; i++) {
     const chk = i - 2;
@@ -473,13 +473,13 @@ function computeTriplePatternSignals(rows) {
     if (valleys.length > 3) valleys.splice(0, valleys.length - 3);
     if (valleys.length < 3 || peaks.length < 3) continue;
     const cur = rows[i].close, prev = rows[i - 1].close;
-    // 三重底買進：谷-峰-谷-峰-谷 排列，第7點向上突破「兩峰連線」斜率頸線
-    if (valleys[0][0] < peaks[1][0] && peaks[1][0] < valleys[1][0] && valleys[1][0] < peaks[2][0] && peaks[2][0] < valleys[2][0]) {
-      const [p1i, p1v] = peaks[1], [p2i, p2v] = peaks[2];
-      const neckline = p1v + (p2v - p1v) / (p2i - p1i) * (i - p1i);
-      if (prev <= neckline && neckline < cur) sig[i] = { type: 'buy', reason: '標準三重底突破' };
+    // 三重底「底部埋伏」買進：谷-峰-谷-峰-谷 排列，且第三個谷正好在本次(chk)確認 → 直接在底部進場
+    if (valleys[0][0] < peaks[1][0] && peaks[1][0] < valleys[1][0] && valleys[1][0] < peaks[2][0] && peaks[2][0] < valleys[2][0]
+        && valleys[2][0] === chk) {
+      sig[i] = { type: 'buy', reason: '三重底底部埋伏買進',
+                 v1i: valleys[1][0], v1v: valleys[1][1], v2i: valleys[2][0], v2v: valleys[2][1] };
     }
-    // 三重頂賣出：峰-谷-峰-谷-峰 排列，第7點向下跌破「兩谷連線」斜率頸線
+    // 三重頂賣出：峰-谷-峰-谷-峰 排列，向下跌破「兩谷連線」斜率頸線
     if (peaks[0][0] < valleys[1][0] && valleys[1][0] < peaks[1][0] && peaks[1][0] < valleys[2][0] && valleys[2][0] < peaks[2][0]) {
       const [v1i, v1v] = valleys[1], [v2i, v2v] = valleys[2];
       const neckline = v1v + (v2v - v1v) / (v2i - v1i) * (i - v1i);
@@ -497,49 +497,38 @@ function wmSignalsCached() {
   return _wmSig;
 }
 
-// 回測：三重底突破進場、三重頂跌破或跌破移動停損出場；25% 風險倉位、ATR 風控；含手續費+證交稅
-function simulateWM(slice, atrSlice, sigSlice) {
+// 回測：底部埋伏進場、跌破上升切線/谷底停損/三重頂跌破出場；25% 資金、含手續費+證交稅
+// from = slice 在 rows 的起始索引（切線停損用全域索引外推，須帶入）
+function simulateWM(slice, sigSlice, from) {
   if (!slice || slice.length < 2) return null;
-  const INIT = INIT_CASH, RISK = 0.25;
+  const INIT = INIT_CASH, ALLOC = 0.25;
   let cash = INIT, shares = 0, inPos = false;
-  let entry = 0, stopLoss = 0, target2R = 0, highest = 0, scaledHalf = false;
-  let fee = 0, tax = 0, buyCount = 0, sellCount = 0, totalTrades = 0, winTrades = 0;
+  let entry = 0, v1i = 0, v1v = 0, v2i = 0, v2v = 0, floorSL = 0;
+  let fee = 0, tax = 0, totalTrades = 0, winTrades = 0;
   const trades = [], equity = [];
-  for (let i = 0; i < slice.length; i++) {
-    const row = slice[i], close = row.close, high = row.high, time = row.time, atr = atrSlice[i], sg = sigSlice[i];
-    if (atr == null) { equity.push(inPos ? cash + shares * close : cash); continue; }
+  for (let j = 0; j < slice.length; j++) {
+    const globalI = from + j, row = slice[j], close = row.close, time = row.time, sg = sigSlice[j];
     if (!inPos) {
-      if (sg && sg.type === 'buy') {                       // 三重底突破 → 進場
-        const riskPerShare = 2 * atr;
-        if (riskPerShare > 0) {
-          let qty = Math.floor((cash * RISK) / riskPerShare);
-          while (qty * close * (1 + FEE_RATE) > cash) qty -= 100;
-          if (qty > 0) {
-            const cost = qty * close, f = cost * FEE_RATE;
-            cash -= cost + f; fee += f; shares = qty;
-            entry = close; highest = close; stopLoss = entry - riskPerShare;
-            target2R = entry + 2 * riskPerShare; scaledHalf = false; inPos = true;
-            trades.push({ time, type: 'buy' }); buyCount++;
-          }
+      if (sg && sg.type === 'buy') {                       // 三重底底部埋伏 → 動用 25% 資金買進
+        let qty = Math.floor((cash * ALLOC) / close);
+        while (qty * close * (1 + FEE_RATE) > cash) qty -= 100;
+        if (qty > 0) {
+          const cost = qty * close, f = cost * FEE_RATE;
+          cash -= cost + f; fee += f; shares = qty; entry = close;
+          v1i = sg.v1i; v1v = sg.v1v; v2i = sg.v2i; v2v = sg.v2v;
+          floorSL = sg.v2v * 0.97;                         // 谷底停損 = 第三谷低點 −3%
+          inPos = true; trades.push({ time, type: 'buy' });
         }
       }
     } else {
-      if (close > highest) highest = close;
-      if (high >= target2R && !scaledHalf) {               // +2R → 減半、停損上移到成本
-        const sell = Math.floor(shares / 2);
-        if (sell > 0) {
-          const rev = sell * close, f = rev * FEE_RATE, t = rev * TAX_RATE;
-          cash += rev - f - t; fee += f; tax += t; shares -= sell; scaledHalf = true; stopLoss = entry;
-          trades.push({ time, type: 'sell' }); sellCount++;
-        }
-      }
-      const stop = Math.max(stopLoss, highest - 2.5 * atr);
-      const exit = close < stop || (sg && sg.type === 'sell');   // 跌破移動停損 或 三重頂跌破 → 出場
+      // 動態上升切線停損：前兩谷連線外推到今天
+      const lineStop = (v2i - v1i) > 0 ? v1v + (v2v - v1v) / (v2i - v1i) * (globalI - v1i) : entry * 0.90;
+      const exit = close < lineStop || close < floorSL || (sg && sg.type === 'sell');
       if (exit) {
         const rev = shares * close, f = rev * FEE_RATE, t = rev * TAX_RATE;
         cash += rev - f - t; fee += f; tax += t;
         const net = rev - f - t - shares * entry * (1 + FEE_RATE);
-        trades.push({ time, type: 'sell' }); sellCount++;
+        trades.push({ time, type: 'sell' });
         totalTrades++; if (net > 0) winTrades++;
         shares = 0; inPos = false;
       }
@@ -551,7 +540,7 @@ function simulateWM(slice, atrSlice, sigSlice) {
     const rev = shares * finClose, f = rev * FEE_RATE, t = rev * TAX_RATE;
     cash += rev - f - t; fee += f; tax += t;
     const net = rev - f - t - shares * entry * (1 + FEE_RATE);
-    trades.push({ time: slice[slice.length - 1].time, type: 'sell' }); sellCount++;
+    trades.push({ time: slice[slice.length - 1].time, type: 'sell' });
     totalTrades++; if (net > 0) winTrades++;
     if (equity.length) equity[equity.length - 1] = cash;
     shares = 0; inPos = false;
@@ -560,7 +549,7 @@ function simulateWM(slice, atrSlice, sigSlice) {
   for (const e of equity) { if (e > peak) peak = e; if (peak > 0 && (e - peak) / peak < maxDD) maxDD = (e - peak) / peak; }
   return { start: slice[0].time, end: slice[slice.length - 1].time, days: slice.length,
            fin: cash, ret: (cash - INIT) / INIT * 100, maxDD: maxDD * 100,
-           fee, tax, cost: fee + tax, trades, buyCount, sellCount,
+           fee, tax, cost: fee + tax, trades,
            totalTrades, winRate: totalTrades > 0 ? winTrades / totalTrades * 100 : 0 };
 }
 
@@ -583,8 +572,8 @@ function updateWM() {
     wmEl.innerHTML = '<div class="rb-hd">三重頂底反轉策略</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
     return;
   }
-  const atrFull = atrCached(), sigFull = wmSignalsCached();
-  const r = simulateWM(rows.slice(from, to + 1), atrFull.slice(from, to + 1), sigFull.slice(from, to + 1));
+  const sigFull = wmSignalsCached();
+  const r = simulateWM(rows.slice(from, to + 1), sigFull.slice(from, to + 1), from);
   if (!r) {
     setStrategyTrades('wm', []);
     wmEl.innerHTML = '<div class="rb-hd">三重頂底反轉策略</div><div class="rb-note">可視範圍太小，請拉大圖表範圍</div>';
@@ -594,7 +583,7 @@ function updateWM() {
   wmEl.innerHTML =
     `<div class="rb-main">` +
       `<div class="rb-hd">三重頂底反轉策略（${curName}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
-      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 三重底突破進場 / 三重頂跌破出場</div>` +
+      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 三重底底部埋伏進場 / 切線·谷底停損出場</div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
         `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
@@ -603,7 +592,7 @@ function updateWM() {
         `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
-      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　25% 風險倉位、2·ATR 停損、+2R 減半、2.5·ATR 移動停損</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　25% 資金買進、停損＝前兩谷上升切線 與 第三谷低點−3%、三重頂跌破出場</div>` +
     `</div>`;
 }
 
@@ -884,6 +873,7 @@ function updateGranville() {
 
 // ── 葛蘭碧最佳參數搜尋（訊號移植 strategy/find_parameter02.py，按鈕觸發、不隨縮放被動更新）──
 // 全進全出：法則1/2/4 買、5/8 賣；MA 在「目前區間」內滾動計算；含交易手續費(買賣)+證交稅(賣)
+// 保護機制（移植 find_03.py）：每股獲利 > 來回交易成本 才准賣，避免不夠賺就賣掉白繳費用
 function runGranvilleOptBacktest(slice, maWindow, devLow, devHigh) {
   const closes = slice.map(r => r.close);
   const n = closes.length;
@@ -894,7 +884,7 @@ function runGranvilleOptBacktest(slice, maWindow, devLow, devHigh) {
     if (i >= maWindow) sum -= closes[i - maWindow];
     if (i >= maWindow - 1) MA[i] = sum / maWindow;        // 不足 maWindow 天 → null（對應 pandas NaN）
   }
-  let cash = INIT_CASH, shares = 0, fee = 0, tax = 0, peak = -Infinity, maxDD = 0;
+  let cash = INIT_CASH, shares = 0, avgBuy = 0, fee = 0, tax = 0, peak = -Infinity, maxDD = 0;
   const trades = [];                                      // 記錄買/賣點（供圖表標記用）
   for (let i = 0; i < n; i++) {
     const price = closes[i];
@@ -913,12 +903,16 @@ function runGranvilleOptBacktest(slice, maWindow, devLow, devHigh) {
     if (sell) target = 0;                                  // 賣出優先（對應 .py 先設買=1 再設賣=0）
     if (target === 1 && shares === 0) {                    // 空手 → 全進（預留手續費）
       const q = Math.floor(cash / (price * (1 + FEE_RATE)));
-      if (q > 0) { const cost = q * price, f = cost * FEE_RATE; cash -= cost + f; shares = q; fee += f;
+      if (q > 0) { const cost = q * price, f = cost * FEE_RATE; cash -= cost + f; shares = q; avgBuy = price; fee += f;
         trades.push({ time: slice[i].time, type: 'buy' }); }
-    } else if (target === 0 && shares > 0) {               // 持有 → 全出（手續費 + 證交稅）
-      const proceeds = shares * price, f = proceeds * FEE_RATE, t = proceeds * TAX_RATE;
-      cash += proceeds - f - t; fee += f; tax += t; shares = 0;
-      trades.push({ time: slice[i].time, type: 'sell' });
+    } else if (target === 0 && shares > 0) {               // 持有 → 全出，但須通過「獲利>成本」保護
+      const profitPerShare = price - avgBuy;
+      const frictionPerShare = avgBuy * FEE_RATE + price * FEE_RATE + price * TAX_RATE;
+      if (profitPerShare > frictionPerShare) {             // 賺得夠付來回費用才賣
+        const proceeds = shares * price, f = proceeds * FEE_RATE, t = proceeds * TAX_RATE;
+        cash += proceeds - f - t; fee += f; tax += t; shares = 0; avgBuy = 0;
+        trades.push({ time: slice[i].time, type: 'sell' });
+      }
     }
     const eq = cash + shares * price;
     if (eq > peak) peak = eq;
@@ -972,7 +966,7 @@ function runGranvilleOpt() {        // 按鈕觸發
   const fmtPct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
   granOptEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd">葛蘭碧最佳參數搜尋（${curName}）· 全進全出</div>` +
+      `<div class="rb-hd">葛蘭碧最佳參數搜尋（${curName}）· 全進全出 · 獲利>成本才賣</div>` +
       `<div class="rb-sub">期間 ${slice[0].time} ~ ${slice[slice.length - 1].time}（${slice.length} 個交易日）· 初始金額 ${money(INIT_CASH)} · 共試 ${results.length} 組</div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl">最終總資產</span><b>${money(best.fin)}</b></div>` +
@@ -982,7 +976,7 @@ function runGranvilleOpt() {        // 按鈕觸發
         `<div><span class="rb-lbl">負乖離買</span><b>${best.devLow}%</b></div>` +
         `<div><span class="rb-lbl">正乖離賣</span><b>+${best.devHigh}%</b></div>` +
       `</div>` +
-      `<div class="rb-cost">交易手續費 <b>${money(best.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(best.tax)}</b>（0.3%·賣出收）　·　以收盤價、全進全出模擬</div>` +
+      `<div class="rb-cost">交易手續費 <b>${money(best.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(best.tax)}</b>（0.3%·賣出收）　·　以收盤價、全進全出、獲利>來回成本才賣出</div>` +
     `</div>`;
 }
 
