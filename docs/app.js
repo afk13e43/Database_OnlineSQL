@@ -275,7 +275,7 @@ function updateRebal() {
   rebalEl.innerHTML =
     `<div class="rb-main">` +
       `<div class="rb-hd">50/50 再平衡（${curName} : 現金）· 偏離 ±5% 自動再平衡</div>` +
-      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">▲買</span> / <span class="down">▼賣</span>　·　<span id="rbAsof"></span></div>` +
+      `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)}　·　交易點 <span class="up">紅買</span> / <span class="down">綠賣</span>　·　<span id="rbAsof"></span></div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl" id="rbFinLbl">最終總金額</span><b id="rbFin"></b></div>` +
         `<div><span class="rb-lbl">報酬率</span><b id="rbRet"></b></div>` +
@@ -442,7 +442,7 @@ function update05() {
   const mk = _market0050 ? '0050 收盤 &gt; MA60' : '尚未載入·暫不過濾';
   bt05El.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd">0050 風控波段策略（${curName}）· 交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+      `<div class="rb-hd">0050 風控波段策略（${curName}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
       `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 大盤濾網：${mk} 才進場</div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
@@ -593,7 +593,7 @@ function updateWM() {
   setStrategyTrades('wm', r.trades);
   wmEl.innerHTML =
     `<div class="rb-main">` +
-      `<div class="rb-hd">三重頂底反轉策略（${curName}）· 交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
+      `<div class="rb-hd">三重頂底反轉策略（${curName}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
       `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 三重底突破進場 / 三重頂跌破出場</div>` +
       `<div class="rb-grid">` +
         `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
@@ -866,8 +866,8 @@ function updateGranville() {
     for (const s of signals) cnt[s.rule] = (cnt[s.rule] || 0) + 1;
     granEl.innerHTML =
       `<div class="rb-main">` +
-        `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）· 交易點 <span class="up">▲買</span> / <span class="down">▼賣</span></div>` +
-        `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(10000000)} · 共 ${signals.length} 個訊號</div>` +
+        `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
+        `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 共 ${signals.length} 個訊號</div>` +
         `<div class="rb-grid">` +
           `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
           `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
