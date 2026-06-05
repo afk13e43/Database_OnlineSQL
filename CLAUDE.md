@@ -50,7 +50,8 @@ DB 連線一律走環境變數 `DB_SERVER` / `DB_DATABASE` / `DB_USER` / `DB_PAS
 - **帳密絕不進 repo / commit**。組員一律用唯讀帳號（`db_datareader`），保護共用資料。
 - 台股慣例 **紅漲綠跌**（`RED=#d50000` / `GREEN=#00897b`），改色票時別反掉。
 - yfinance ticker 對應：台股 `code.TW`，大盤特例 `^TWII`，DB 內大盤代碼存成 `TWII`。
-- `docs/app.js` 是純前端、無建置步驟，直接改檔即可；改完可 `node --check app.js` 檢查語法。
+- `docs/app.js` 是純前端、無建置步驟，直接改檔即可；改完可 `node --check app.js` 檢查語法。策略面板（50/50 再平衡、0050 風控波段、三重頂底反轉、葛蘭碧八大法則、葛蘭碧最佳參數）都在 app.js 內，移植自組員的 `strategy/*.py`。
+- **`strategy/` 是組員的策略參考腳本（被 `.gitignore` 排除）**：裡面 `*.py` 有**硬編碼 DB 帳密**，public repo 不能 commit；網站邏輯已用前端 JS 重寫。若要納入版控，須先比照 `db.py` 改走 `DB_*` 環境變數、移除明碼帳密。
 - lightweight-charts 的 `timeScale.minBarSpacing` 預設 0.5px/根，2700+ 根會塞不下而
   砍掉左邊最舊資料 → 需設小值（目前 0.04）才能「全部」完整顯示自 2015。
 - **Pages 改用 GitHub Actions 部署**（Settings → Pages 來源＝GitHub Actions，非 `/docs` 分支）。CI 在 runner 內現算 `docs/data` 後直接部署，**不再 commit 回 repo** → repo 裡 commit 的 `docs/data/*.json` 只是歷史殘留、非線上資料源（要本機預覽才需自己跑 `build_site.py`）。
