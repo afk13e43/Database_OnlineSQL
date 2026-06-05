@@ -9,6 +9,3 @@ venv/
 .env
 *.env
 secrets.*
-
-# 策略參考腳本：含硬編碼 DB 帳密，且為 public repo → 不 commit（本機參考用；網站已移植成前端 JS）
-strategy/
