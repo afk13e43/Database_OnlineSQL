@@ -849,15 +849,15 @@ function updateGranville() {
   const maLbl = params.maKey.toUpperCase();
   if (!r) {
     granEl.innerHTML =
-      `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）</div>` +
+      `<div class="rb-hd">葛蘭碧八大法則（${curName}）· ${maLbl}</div>` +
       `<div class="rb-note">回測期間無訊號</div>`;
   } else {
     const cnt = {};
     for (const s of signals) cnt[s.rule] = (cnt[s.rule] || 0) + 1;
     granEl.innerHTML =
       `<div class="rb-main">` +
-        `<div class="rb-hd">葛蘭碧八大法則（${maLbl}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
-        `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 初始金額 ${money(INIT_CASH)} · 共 ${signals.length} 個訊號</div>` +
+        `<div class="rb-hd">葛蘭碧八大法則（${curName}）· 交易點 <span class="up">紅買</span> / <span class="down">綠賣</span></div>` +
+        `<div class="rb-sub">期間 ${r.start} ~ ${r.end}（${r.days} 個交易日）· 均線 ${maLbl} · 初始金額 ${money(INIT_CASH)} · 共 ${signals.length} 個訊號</div>` +
         `<div class="rb-grid">` +
           `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
           `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
