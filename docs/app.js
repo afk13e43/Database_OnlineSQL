@@ -450,7 +450,6 @@ function update05() {
         `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易次數</span><b>${r.trades.length}</b></div>` +
-        `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
       `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　5% 風險倉位、2·ATR 停損、+2R 減半、2.5·ATR 移動停損</div>` +
@@ -590,7 +589,6 @@ function updateWM() {
         `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易次數</span><b>${r.trades.length}</b></div>` +
-        `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
       `<div class="rb-cost">交易手續費 <b>${money(r.fee)}</b>（0.1425%·買賣各收）　＋　證交稅 <b>${money(r.tax)}</b>（0.3%·賣出收）　·　25% 資金、停損＝上升切線／谷底−3%、三重頂跌破出場</div>` +
