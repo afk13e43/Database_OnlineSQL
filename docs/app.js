@@ -449,7 +449,7 @@ function update05() {
         `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
         `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
-        `<div><span class="rb-lbl">交易次數</span><b>${r.totalTrades}</b></div>` +
+        `<div><span class="rb-lbl">交易次數</span><b>${r.trades.length}</b></div>` +
         `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
@@ -589,7 +589,7 @@ function updateWM() {
         `<div><span class="rb-lbl">最終總金額</span><b>${money(r.fin)}</b></div>` +
         `<div><span class="rb-lbl">報酬率</span><b class="${r.ret >= 0 ? 'up' : 'down'}">${(r.ret >= 0 ? '+' : '') + r.ret.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">最大回撤</span><b class="down">${r.maxDD.toFixed(2)}%</b></div>` +
-        `<div><span class="rb-lbl">交易次數</span><b>${r.totalTrades}</b></div>` +
+        `<div><span class="rb-lbl">交易次數</span><b>${r.trades.length}</b></div>` +
         `<div><span class="rb-lbl">勝率</span><b>${r.winRate.toFixed(2)}%</b></div>` +
         `<div><span class="rb-lbl">交易成本</span><b>${money(r.cost)}</b></div>` +
       `</div>` +
